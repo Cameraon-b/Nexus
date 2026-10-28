@@ -1,0 +1,43 @@
+# Dependencies and downloaded tooling
+node_modules/
+.browsers/
+.tools/
+.venv/
+venv/
+
+# Build output and local caches
+dist/
+build/
+.cache/
+.npm-cache/
+node-compile-cache/
+.vite/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+
+# Generated test reports and screenshots
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage/
+/artifacts/
+
+# Local environment and credentials (keep sanitized examples)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc.local
+
+# Local logs and editor/OS files
+*.log
+.vs/
+.idea/
+.DS_Store
+Thumbs.db

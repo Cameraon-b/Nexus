@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+import { mkdir } from 'node:fs/promises';
+await mkdir('artifacts', {recursive:true});
+const browser=await chromium.launch();
+const page=await browser.newPage({viewport:{width:1440,height:960}});
+await page.goto('http://127.0.0.1:5174');
+await page.screenshot({path:'artifacts/workspace.png',fullPage:true});
+await page.getByRole('button',{name:'Open review queue',exact:true}).click();
+await page.screenshot({path:'artifacts/review.png',fullPage:true});
+await page.setViewportSize({width:390,height:844});
+await page.getByRole('button',{name:'Common room',exact:true}).click();
+await page.screenshot({path:'artifacts/mobile.png',fullPage:true});
+await browser.close();

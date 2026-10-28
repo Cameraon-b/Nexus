@@ -1,0 +1,70 @@
+/* Local-first typography: Windows' humanist UI face, no cloud font requests. */
+:root {font-family:'Segoe UI',sans-serif;--muted:#596d64}
+.app-frame * {font-family:inherit}
+.brand-name {font-size:26px;font-weight:750;letter-spacing:-1px}
+.brand-sub,.eyebrow,.rail-label,.section-kicker {font-size:10px}
+.nav-item,.topic-link {font-size:13px;min-height:42px}
+.switch-copy b,.profile-copy b,.approval-copy b {font-size:13px}
+.switch-copy small,.profile-copy span,.approval-copy span {font-size:11px}
+.crumbs,.crumbs b {font-size:12px}
+.conversation-heading h1 {font-size:26px;letter-spacing:-.7px}
+.conversation-heading p,.conversation-meta,.welcome-card span {font-size:12px;color:#617469}
+.welcome-card b,.welcome-card button {font-size:12px}
+.message-byline b {font-size:14px;font-weight:650}
+.message-byline time,.group-time {font-size:11px;color:#617469}
+.message-content p,.dm-message p {font-size:15px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;color:#30433b}
+.message-row {margin-bottom:23px}
+.kind-tag {font-size:9px;letter-spacing:.4px}
+.composer textarea {font-size:15px;line-height:1.5;min-height:70px}
+.composer-context,.text-tool,.send-button {font-size:12px}
+.composer-bottom>span {font-size:11px}
+.send-button {height:36px}
+.context-column h2 {font-size:16px;font-weight:650}
+.person-copy b {font-size:13px}.person-copy>span {font-size:11px}
+.participant-row {min-height:49px}
+.topic-card>b {font-size:13px}.topic-preview {font-size:12px;line-height:1.5}
+.topic-card-top,.topic-card-bottom,.new-topic-link {font-size:11px}
+.governance-hint b,.governance-hint p,.governance-hint button,.pending-mini {font-size:11px;line-height:1.5}
+.prototype-note {font-size:10px}.prototype-pill {font-size:9px}
+.page-heading p,.admin-panel-heading p,.governance-summary span {font-size:13px;line-height:1.5}
+.governance-tab {font-size:12px;height:48px}.button {font-size:12px;min-height:38px}
+.approval-list-head h2,.review-header h2 {font-size:18px}
+.draft-list-meta b,.review-author b {font-size:14px}.draft-snippet {font-size:13px;line-height:1.5}
+.draft-destination,.review-author>div>span,.review-time {font-size:11px}
+.context-quote b,.context-quote p {font-size:12px;line-height:1.6}.context-quote {border-left:0}
+.draft-edit-label {display:block;font-size:11px}.draft-edit-label>span {float:right;font-size:11px}
+.draft-edit-label textarea {display:block;width:100%;margin-top:12px;font-size:14px;line-height:1.6;min-height:130px}
+.authorship-note,.approval-list-foot,.governance-footnote {font-size:11px;line-height:1.6}
+.draft-list-card.selected {border-left-color:transparent;box-shadow:inset 0 0 0 1px #bad2c2}
+.policy-intro p,.policy-person b,.policy-switch-copy b,.participant-description {font-size:14px;line-height:1.6}
+.policy-switch-copy span,.policy-person span,.policy-caution,.participant-card-state,.participant-card-foot {font-size:12px;line-height:1.5}
+.admin-person b,.audit-row b {font-size:13px}.admin-person span,.audit-row span,.audit-row time {font-size:11px}
+.moderation-actions button,.moderation-pill {font-size:11px;min-height:36px}
+.dm-list-copy b,.people-quick {font-size:14px}.dm-list-copy>span,.dm-presence,.dm-context-note,.dm-message-meta {font-size:12px}
+.search-panel {background:white;border-bottom:1px solid var(--line)}
+.search-results {display:grid;max-height:260px;overflow:auto;padding:8px 24px}
+.search-results button {display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border:0;padding:12px;border-radius:6px;color:var(--ink)}
+.search-results button:hover {background:var(--mint)}.search-results small {margin-left:auto;color:var(--muted)}
+.history-card {padding:22px;border-bottom:1px solid var(--line)}
+.history-card header {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.history-card p {font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.history-card small {color:var(--muted)}
+.history-card summary {cursor:pointer;font-size:12px}.history-card time {font-size:12px;color:var(--muted)}
+.unread-badge {margin-left:auto;border-radius:10px;padding:2px 6px;background:#dcebe3;color:#264d3b;font-size:10px;font-weight:700}
+.demo-dialog {border:1px solid #d6e0da;border-radius:12px;padding:26px;width:min(520px,calc(100vw - 32px));color:var(--ink)}
+.demo-dialog::backdrop {background:#17262480}.demo-dialog h2 {margin-top:0}.demo-dialog p {font-size:14px;line-height:1.6}.demo-dialog .actions {display:flex;gap:12px;justify-content:flex-end}
+.topic-modal label {font-size:13px}.topic-modal input,.topic-modal textarea {font-size:14px}.topic-modal {max-height:90vh;overflow:auto}
+@media(min-width:851px){.conversation-column{min-height:calc(100vh - 90px)}.context-column{overflow:auto}.workspace-layout{grid-template-columns:minmax(0,1fr) 280px}}
+@media(max-width:850px){.nav-item{min-height:44px}.top-icon,.icon-button,.tiny{min-width:36px;min-height:36px}.prototype-note{line-height:1.4;padding-top:8px;padding-bottom:8px;height:auto}.context-column{display:none}}
+@media(max-width:620px){
+ .app-main{min-width:0}.topbar .crumbs>span{display:none}.topbar-actions{gap:4px}.prototype-pill{font-size:8px}.top-profile{display:none}
+ .conversation-heading h1{font-size:21px}.conversation-title-wrap{min-width:0;gap:8px}.title-line{flex-wrap:wrap;gap:6px}.conversation-heading p{font-size:12px}
+ .message-content p,.dm-message p{font-size:14px}.message-byline{flex-wrap:wrap;gap:5px}.message-byline time{font-size:10px}
+ .composer-tools{gap:10px;flex-wrap:wrap}.composer textarea{font-size:16px}.composer-bottom>span{font-size:10px;max-width:60%}.send-button{height:44px;min-width:64px}
+ .welcome-card button{font-size:11px;min-height:44px}.welcome-card{flex-wrap:wrap}.welcome-glyph{display:none}.live-tag{font-size:8px}
+ .page-heading h1{font-size:25px}.governance-tab{font-size:11px;min-height:44px}.review-actions{gap:8px}.review-actions .button{flex:1;min-height:44px}
+ .prototype-note>span:last-child{max-width:72%;font-size:9px}.draft-edit-label>span{float:none;display:block;margin-top:5px}
+ .policy-row{flex-wrap:wrap;gap:12px}.policy-switch-copy{min-width:150px}.moderation-actions{flex-wrap:wrap}
+ .topic-modal{padding:20px}.modal-foot{flex-wrap:wrap}.modal-foot>span{width:100%}.topic-modal h2{font-size:22px}
+ .participant-admin-row{flex-wrap:wrap}.dm-thread{min-width:0}.history-card{padding:16px}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}

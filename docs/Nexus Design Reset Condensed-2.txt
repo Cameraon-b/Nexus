@@ -1,0 +1,670 @@
+NEXUS DESIGN RESET (CONDENSED) 
+Implementation-Ready Design Packet 
+ 
+Status: Condensed reference edition 
+Goal: Preserve the approved Nexus product and implementation direction in a version concise 
+enough to guide coding without design sprawl. 
+ 
+================================================================= 
+1. PRODUCT THESIS 
+================================================================= 
+ 
+Nexus is a conversation-first collaborative workspace for humans and AI participants. 
+ 
+It is not primarily trying to imitate Slack, Discord, or Teams with AI added on. Its central question 
+is: 
+ 
+What does collaboration look like when AI participants are first-class members of the 
+workspace? 
+ 
+This drives the design: 
+- conversation is primary 
+- participants are visible 
+- agents are represented as real actors, not hidden automation 
+- governance exists because some participants are agents 
+- structure should emerge from communication rather than replacing it 
+ 
+Nexus MVP should feel like a shared workspace that continues to exist over time, not a 
+workflow console. 
+ 
+================================================================= 
+2. MVP PRODUCT SHAPE 
+================================================================= 
+ 
+The Nexus MVP is focused on: 
+- Workspace Home 
+- Main Conversation 
+- topical conversations 
+- direct messages 
+- visible participants 
+- governed agent communication 
+- admin moderation and policy controls 
+- continuity through unread/activity indicators 
+ 
+
+Nexus is public-by-default inside the local environment unless policy says otherwise. 
+New human users should become visible participants immediately. 
+All new human participants should be part of Main by default. 
+ 
+Main is the permanent common room of the workspace. 
+ 
+================================================================= 
+3. CORE PRODUCT RULES 
+================================================================= 
+ 
+3.1 Conversation-first 
+The center of the product is communication, not workflow machinery. 
+ 
+3.2 Participant-centered 
+Humans, agents, and services are represented as participants. 
+Participants are visible and should feel socially present in the workspace. 
+ 
+3.3 Governance layered on top 
+Governance should support trust without replacing collaboration. 
+Agent outbound communication may require admin approval. 
+ 
+3.4 Truthful authorship 
+If an agent drafts a message and the admin approves it, the visible delivered message is still 
+authored by the original agent participant. 
+If the admin edits before approval, governance history should preserve that intervention without 
+rewriting authorship. 
+ 
+3.5 Stability of visible communication 
+Visible messages should be stable artifacts. 
+Uncertainty belongs in drafts, not in the conversation timeline. 
+ 
+3.6 Workspace continuity 
+Users should be able to leave, return later, and quickly understand what changed. 
+Unread/activity indicators are part of the MVP. 
+ 
+================================================================= 
+4. PRIMARY ENTITIES 
+================================================================= 
+ 
+Core entities: 
+- Account: human authentication identity 
+- Participant: visible actor in the workspace 
+- Conversation: communication space (main, topical, direct) 
+
+- Message: visible delivered communication artifact 
+- Message Draft: governed not-yet-visible proposed outbound content 
+- Draft Review Decision: final admin decision on a draft 
+- Participant Policy: current permission/governance configuration 
+- Moderation Event: history of state changes such as limit/suspend/block 
+- Session: authenticated human session 
+- Integration Token: authentication credential for agents/services 
+- Conversation Read State: derived continuity support 
+- Audit Event: selective admin/system history 
+ 
+================================================================= 
+5. CONVERSATION MODEL 
+================================================================= 
+ 
+Conversation types: 
+- Main 
+- Topical 
+- Direct 
+ 
+Main: 
+- exactly one Main Conversation exists in MVP 
+- Main cannot be archived or closed in MVP 
+- every ordinary participant belongs to Main by default 
+ 
+Topical: 
+- public focused discussion spaces created from emerging conversation needs 
+- should feel like natural discussion spaces, not tickets 
+ 
+Direct: 
+- private conversations between participants 
+- in MVP, there should be one direct conversation per pair of participants 
+- direct conversations persist even when quiet 
+ 
+Conversation states: 
+- active 
+- archived 
+- closed 
+ 
+Rules: 
+- active -> archived allowed 
+- active -> closed allowed 
+- archived -> active allowed 
+- closed is terminal in MVP 
+
+ 
+================================================================= 
+6. PARTICIPANT MODEL 
+================================================================= 
+ 
+Participant kinds: 
+- human 
+- agent 
+- service 
+ 
+Participants are the visible workspace actors. 
+Human accounts map to participants, but account identity and participant identity are not the 
+same concept. 
+ 
+Moderation states: 
+- pending_setup 
+- active 
+- limited 
+- suspended 
+- blocked 
+ 
+Availability states: 
+- available 
+- unavailable 
+- degraded 
+- offline 
+- unknown 
+ 
+Key distinctions: 
+- moderation state is not policy 
+- moderation state is not availability 
+- availability does not remove identity 
+- offline participants remain visible 
+- limited participants remain visible unless intentionally hidden by product behavior 
+ 
+New human users: 
+- account is created 
+- participant is automatically created 
+- participant is visible immediately 
+- participant joins Main automatically 
+ 
+================================================================= 
+7. MESSAGE AND DRAFT MODEL 
+
+================================================================= 
+ 
+Visible messages are stable conversation artifacts. 
+ 
+Message states: 
+- delivered 
+- withdrawn 
+ 
+Rules: 
+- most messages are created directly as delivered 
+- delivered -> withdrawn is allowed only through explicit admin/moderation action 
+- withdrawn -> delivered is not part of MVP behavior 
+- failed creation is not a durable message state; it belongs to the submission/request layer 
+ 
+Draft states: 
+- pending 
+- approved 
+- approved_with_edits 
+- rejected 
+- cancelled 
+ 
+Rules: 
+- only pending drafts are actionable 
+- approved/rejected/cancelled drafts remain visible to admins in history 
+- resolved drafts are terminal in MVP 
+- one final decision per draft in MVP 
+ 
+Cancelled meaning: 
+A pending draft may be cancelled by its originating integration or by the system when it is 
+superseded, invalidated, or no longer deliverable. Ordinary users do not cancel agent drafts in 
+MVP. 
+ 
+Draft review outcomes: 
+- approved 
+- approved_with_edits 
+- rejected 
+ 
+================================================================= 
+8. USER JOURNEYS THAT DEFINE THE MVP 
+================================================================= 
+ 
+The MVP should support these core end-to-end stories: 
+ 
+
+1. First run / bring Nexus to life 
+- first admin sets up system 
+- admin participant is created 
+- Main exists 
+- agent participants can be added 
+- first governed message can be approved and delivered 
+ 
+2. Human enters and orients quickly 
+- user logs in 
+- sees Main, participants, and topical areas 
+- understands what is happening without training 
+ 
+3. New human joins workspace 
+- account created 
+- visible participant created automatically 
+- user belongs to Main immediately 
+ 
+4. Human posts in Main 
+- simple natural shared communication 
+ 
+5. Human creates topical conversation 
+- focused public discussion emerges naturally 
+ 
+6. Human starts DM with another human 
+- lightweight native private conversation 
+ 
+7. Human starts DM with an agent 
+- feels like messaging a participant, not filing a ticket 
+ 
+8. Agent receives input and submits draft 
+- integration retrieves relevant input 
+- agent produces pending draft 
+ 
+9. Admin reviews and resolves draft 
+- approve 
+- approve with edits 
+- reject 
+ 
+10. User sees offline/degraded participant honestly 
+- participant remains visible 
+- availability truth is preserved 
+ 
+11. User receives attention signal and returns 
+
+- unread/activity marker pulls user back into context 
+ 
+12. User returns after time away 
+- catches up on Main, DMs, topical conversations, or admin work 
+ 
+13. Admin inspects participant governance state 
+- policy, moderation state, and availability are visible distinctly 
+ 
+14. Admin moderates a participant 
+- limit, suspend, block, restore handled explicitly 
+ 
+================================================================= 
+9. STATE / LIFECYCLE MODEL 
+================================================================= 
+ 
+Messages: 
+- delivered -> withdrawn 
+ 
+Drafts: 
+- pending -> approved 
+- pending -> approved_with_edits 
+- pending -> rejected 
+- pending -> cancelled 
+ 
+Participants: 
+- pending_setup -> active 
+- active -> limited 
+- active -> suspended 
+- active -> blocked 
+- limited -> suspended 
+- limited -> blocked 
+- limited -> active 
+- suspended -> blocked 
+- suspended -> active 
+- blocked -> active through explicit restore 
+ 
+Conversations: 
+- active -> archived 
+- active -> closed 
+- archived -> active 
+- closed terminal 
+ 
+Sessions: 
+
+- active -> expired 
+- active -> revoked 
+ 
+Integration tokens: 
+- active -> revoked 
+ 
+Read/unread: 
+- derived behavior from last-read position/time, not a heavy standalone state machine 
+ 
+================================================================= 
+10. TECHNICAL ARCHITECTURE 
+================================================================= 
+ 
+Approved stack: 
+- Language: C# 
+- Backend: ASP.NET Core Web API 
+- ORM: Entity Framework Core 
+- Database: PostgreSQL 
+- Realtime: SignalR where it materially improves UX 
+- Frontend: React + TypeScript 
+- Deployment: Docker Compose on Nora 
+- Communication model: REST API first, SignalR selectively where useful 
+ 
+Backend structure: 
+- Nexus.Api 
+- Nexus.Application 
+- Nexus.Domain 
+- Nexus.Infrastructure 
+- Nexus.Tests 
+ 
+Architectural principles: 
+- product rules should not live in controllers 
+- domain truth should remain explicit 
+- infrastructure should support product behavior, not define it 
+- realtime is additive, not the source of correctness 
+- agent integrations can remain REST/polling-based even if UI uses SignalR 
+ 
+================================================================= 
+11. CONCRETE SCHEMA SHAPE 
+================================================================= 
+ 
+Recommended core tables: 
+- accounts 
+
+- sessions 
+- participants 
+- participant_policies 
+- participant_moderation_events 
+- integration_tokens 
+- conversations 
+- conversation_members 
+- messages 
+- message_drafts 
+- draft_review_decisions 
+- conversation_reads 
+- audit_events 
+ 
+Accounts: 
+- human auth identity 
+- email required and unique 
+- display name required 
+- admin flag supported 
+ 
+Participants: 
+- visible actor table 
+- kind: human/agent/service 
+- linked account for humans 
+- moderation state stored explicitly 
+- availability state stored explicitly 
+- visibility explicit 
+ 
+Participant policies: 
+- current row per participant in MVP 
+- boolean permissions preferred over an abstract grants matrix for MVP 
+- examples: 
+  - can_post_in_main 
+  - can_post_in_topical 
+  - can_send_direct_messages 
+  - can_create_topical_conversations 
+  - requires_approval_for_outbound_messages 
+  - requires_approval_for_actions 
+ 
+Conversations: 
+- kind: main/topical/direct 
+- state: active/archived/closed 
+- title required for main/topical by application rule 
+- Main uniqueness enforced by bootstrap/application rule 
+
+ 
+Conversation members: 
+- explicit membership rows recommended for all conversation types, including Main 
+- direct conversations should have exactly two active participants in MVP 
+ 
+Messages: 
+- conversation_id 
+- author_participant_id 
+- body 
+- state: delivered/withdrawn 
+- optional source_draft_id for approved agent output linkage 
+ 
+Message drafts: 
+- conversation_id 
+- author_participant_id 
+- body 
+- state 
+- submitted_via_token_id optional 
+- supersedes_draft_id optional if needed 
+ 
+Draft review decisions: 
+- one final review row per draft in MVP 
+- reviewed_by_account_id 
+- outcome 
+- original body 
+- final body 
+- review notes optional 
+ 
+Conversation reads: 
+- one row per participant per conversation 
+- stores last_read_message_id and/or last_read_at 
+- supports derived unread state 
+ 
+Audit events: 
+- selective append-only admin/system history 
+- should not replace first-class domain tables 
+ 
+================================================================= 
+12. API CONTRACT DIRECTION 
+================================================================= 
+ 
+Three API surfaces: 
+1. Human app API 
+
+2. Admin API 
+3. Integration API 
+ 
+Human app API examples: 
+- POST /api/auth/bootstrap 
+- POST /api/auth/login 
+- POST /api/auth/logout 
+- GET /api/auth/me 
+- GET /api/workspace/home 
+- GET /api/conversations 
+- GET /api/conversations/{id} 
+- POST /api/conversations/topical 
+- GET /api/conversations/{id}/messages 
+- POST /api/conversations/{id}/messages 
+- POST /api/direct-conversations 
+- GET /api/participants 
+- GET /api/participants/{id} 
+- POST /api/conversations/{id}/read-state 
+ 
+Admin API examples: 
+- GET /api/admin/drafts/pending 
+- GET /api/admin/drafts/{id} 
+- POST /api/admin/drafts/{id}/approve 
+- POST /api/admin/drafts/{id}/approve-with-edits 
+- POST /api/admin/drafts/{id}/reject 
+- GET /api/admin/participants 
+- GET /api/admin/participants/{id} 
+- PUT /api/admin/participants/{id}/policy 
+- POST /api/admin/participants/{id}/moderation 
+- GET /api/admin/audit-events 
+- GET /api/admin/integrations 
+- POST /api/admin/integrations/{participantId}/tokens 
+ 
+Integration API examples: 
+- GET /api/integrations/me 
+- GET /api/integrations/inbox 
+- POST /api/integrations/drafts 
+- POST /api/integrations/drafts/{id}/cancel 
+- GET /api/integrations/drafts 
+ 
+API principles: 
+- REST is authoritative 
+- SignalR supplements the UI experience 
+
+- integrations use token auth and remain simple in MVP 
+- admin endpoints require explicit authorization 
+ 
+================================================================= 
+13. REALTIME STRATEGY 
+================================================================= 
+ 
+SignalR should be used selectively for: 
+- new visible messages 
+- unread/activity indicator refresh 
+- approval queue count changes 
+- participant availability changes 
+ 
+SignalR should not become required for core correctness. 
+If realtime is unavailable, REST flows should still work correctly. 
+ 
+================================================================= 
+14. FRONTEND BUILD MAP 
+================================================================= 
+ 
+Core screens: 
+- First Run / Bootstrap 
+- Login 
+- Workspace Home 
+- Conversation View 
+- Direct Message View 
+- Draft Approval Queue 
+- Participant Detail 
+- Admin Participant Detail 
+- Admin Integrations / Tokens 
+ 
+Persistent shell: 
+- left nav 
+- center conversation/content area 
+- right participant/context column 
+ 
+Primary component groups: 
+- AppShell 
+- LeftNav 
+- ParticipantSidebar 
+- ConversationList 
+- MessageList 
+- MessageComposer 
+
+- ParticipantList / ParticipantProfileCard 
+- DraftQueueList 
+- DraftReviewPanel 
+- PolicyEditor 
+- ModerationActionPanel 
+ 
+Frontend build order: 
+1. app shell 
+2. login/bootstrap 
+3. Main conversation read/post flow 
+4. participant sidebar 
+5. topical conversations 
+6. direct messages 
+7. unread/activity indicators 
+8. approval queue 
+9. admin participant governance 
+10. realtime refinement 
+ 
+================================================================= 
+15. IMPLEMENTATION PHASES 
+================================================================= 
+ 
+Phase 1: Foundation and project skeleton 
+- .NET solution 
+- React frontend scaffold 
+- Docker Compose baseline 
+- PostgreSQL wiring 
+ 
+Phase 2: Core domain and schema foundation 
+- entities 
+- EF Core mapping 
+- migrations 
+- lifecycle tests 
+ 
+Phase 3: Auth and participant identity 
+- bootstrap 
+- login/session flow 
+- automatic participant creation 
+- Main existence guarantee 
+ 
+Phase 4: Core conversation and messaging 
+- Main retrieval 
+- human post/read flow 
+
+- message stability 
+- basic continuity support 
+ 
+Phase 5: Topical conversations and DMs 
+- conversation creation/opening 
+- DM behavior 
+- participant launch points 
+ 
+Phase 6: Draft governance and approval 
+- draft submission 
+- pending queue 
+- approve / approve with edits / reject 
+- visible message creation from approved drafts 
+ 
+Phase 7: Admin governance and moderation 
+- participant admin detail 
+- policy inspection/update 
+- moderation actions/history 
+ 
+Phase 8: Realtime layer 
+- SignalR for key live updates 
+ 
+Phase 9: Agent integration path 
+- integration-token auth 
+- simple inbox/polling model 
+- draft submission path 
+ 
+Phase 10: Hardening and deployment readiness 
+- Docker Compose refinement 
+- operability 
+- UX cleanup 
+- Nora deployment readiness 
+ 
+================================================================= 
+16. DEFERRED / NOT IN MVP 
+================================================================= 
+ 
+Explicitly deferred unless proven necessary: 
+- rich notifications system 
+- pinned messages/context 
+- attachments/media subsystem 
+- reactions/emojis 
+- advanced search 
+
+- thread/reply nesting beyond current conversation model 
+- multi-workspace/multi-tenant support 
+- plugin system 
+- advanced presence states beyond MVP availability 
+- generalized workflow engine 
+- policy versioning system 
+- advanced analytics/reporting 
+ 
+================================================================= 
+17. IMPLEMENTATION GUARDRAILS 
+================================================================= 
+ 
+Avoid these failure modes: 
+- turning Nexus into an admin console with chat attached 
+- collapsing moderation, policy, and availability into one concept 
+- hiding agents as invisible automation instead of visible participants 
+- putting domain rules directly in controllers 
+- letting EF Core shape product semantics by accident 
+- making SignalR mandatory for correctness 
+- overdesigning integrations before the first real connector path works 
+- feature-parity chasing with Slack/Discord/Teams 
+ 
+When ambiguity appears during implementation, prefer: 
+- explicit over magical 
+- simpler schema over speculative extensibility 
+- REST first over realtime-first 
+- one clear flow over configurable workflow machinery 
+- visible participant truth over hidden system behavior 
+ 
+================================================================= 
+18. STOP CONDITION / DESIGN COMPLETENESS 
+================================================================= 
+ 
+This condensed packet should be considered sufficient to begin implementation when the team 
+agrees that: 
+- product behavior is settled 
+- journeys are sufficient 
+- lifecycle/state rules are explicit 
+- technical architecture is settled 
+- schema shape is settled 
+- API direction is settled 
+ 
+At that point, new design sections should only be added if a real implementation blocker 
+
+appears. 
+ 
+================================================================= 
+19. FINAL PRINCIPLE 
+================================================================= 
+ 
+Nexus should be built as a persistent collaborative workspace where humans and AI 
+participants are visible members, conversation is primary, and governance strengthens trust 
+without becoming the product itself. 
+ 
