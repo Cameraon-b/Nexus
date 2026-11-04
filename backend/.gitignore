@@ -1,0 +1,6 @@
+**/bin/
+**/obj/
+.test-keys/
+.tools/
+TestResults/
+*.log

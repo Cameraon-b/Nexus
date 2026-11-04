@@ -1,0 +1,10 @@
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { mkdirSync, existsSync } from 'node:fs';
+const root=fileURLToPath(new URL('../', import.meta.url));
+const cliHome=`${root}/.local/dotnet-home`, cache=`${root}/.cache`;
+for(const p of [cliHome,cache,`${cache}/tmp`]) mkdirSync(p,{recursive:true});
+const executable=process.platform==='win32'?`${root}/.tools/dotnet/dotnet.exe`:'dotnet';
+if(process.platform==='win32'&&!existsSync(executable)) throw new Error('Install the project-local .NET SDK before running this command.');
+const result=spawnSync(executable,process.argv.slice(2),{cwd:root,stdio:'inherit',env:{...process.env,DOTNET_ROOT:`${root}/.tools/dotnet`,DOTNET_MULTILEVEL_LOOKUP:'0',DOTNET_CLI_HOME:cliHome,DOTNET_CLI_TELEMETRY_OPTOUT:'1',DOTNET_SKIP_FIRST_TIME_EXPERIENCE:'1',DOTNET_GENERATE_ASPNET_CERTIFICATE:'false',DOTNET_NOLOGO:'1',NUGET_PACKAGES:`${cache}/nuget/packages`,NUGET_HTTP_CACHE_PATH:`${cache}/nuget/http`,TMP:`${cache}/tmp`,TEMP:`${cache}/tmp`}});
+process.exit(result.status??1);

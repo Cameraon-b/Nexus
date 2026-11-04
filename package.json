@@ -8,7 +8,13 @@
     "start": "node scripts/start.mjs",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "test": "vitest run",
-    "test:ui": "node scripts/test-ui.mjs"
+    "test:ui": "node scripts/test-ui.mjs",
+    "setup": "node scripts/setup.mjs",
+    "api": "node scripts/api.mjs",
+    "test:backend": "node scripts/test-backend.mjs",
+    "test:live": "node scripts/test-live.mjs",
+    "test:tooling": "node --test scripts/runtime.test.mjs",
+    "build:api": "node scripts/dotnet.mjs build backend/Nexus.Api/Nexus.Api.csproj"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

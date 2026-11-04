@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 await mkdir('artifacts', {recursive:true});
 const browser=await chromium.launch();
 const page=await browser.newPage({viewport:{width:1440,height:960}});
-await page.goto('http://127.0.0.1:5174');
+await page.goto('http://127.0.0.1:5174/demo');
 await page.screenshot({path:'artifacts/workspace.png',fullPage:true});
 await page.getByRole('button',{name:'Open review queue',exact:true}).click();
 await page.screenshot({path:'artifacts/review.png',fullPage:true});

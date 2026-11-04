@@ -1,72 +1,71 @@
-# Nexus — conversation-first prototype
+# Nexus — a conversation-first local workspace
 
-An interactive React + TypeScript prototype based on the supplied **Nexus Design Reset Complete Updated** and **Condensed** packets. This iteration reuses and repairs the existing frontend rather than discarding it.
+Nexus now has a real **ASP.NET Core / EF Core / PostgreSQL** foundation behind the React interface. The original sample prototype remains separate at `/demo`.
 
-## Open
+## Open and use
 
-The development instance uses **http://127.0.0.1:5174/**.
+From `C:\Nexus`, run `npm start`, or double-click **Start Nexus.cmd** with Docker Desktop running.
 
-- Double-click **Start Nexus.cmd** to start it and open the browser.
-- Or run `npm start` from `C:\Nexus`, then open the address above.
-- If that port is already occupied by this prototype, just open the existing instance.
-- Stop a server you started with Ctrl+C in its terminal.
-- `npm run dev` is the equivalent development command.
+- Workspace: **http://127.0.0.1:5174/**
+- Sample prototype: **http://127.0.0.1:5174/demo**
+- API: loopback port **5080**; PostgreSQL: loopback port **55432**
 
-Node.js and project dependencies are already present in this environment. The server binds only to loopback. This is not a LAN deployment. Port 5173 was occupied and was left untouched.
+On first visit, create your own administrator account (display name, email, password of 12–128 characters). No default account or test credentials are installed in your actual workspace. Post in the Common Room, reload, sign out, and sign in again: messages are stored in PostgreSQL, not browser localStorage. The first admin is also a visible human participant. Setup closes atomically after the first account is created.
 
-## Try this first
+`npm start` brings up PostgreSQL, builds the API, starts missing services, and reuses an existing Nexus frontend. Ctrl+C stops API/UI processes owned by that launcher. PostgreSQL stays running to preserve your workspace. To stop only the database, run `docker stop nexus-postgres-1`; the launcher starts it again later.
 
-1. Post in **Common room**. Enter sends; Shift+Enter adds a line.
-2. Select **Start a topic**, give it a title and opening message, then continue the discussion.
-3. Select a participant to open a direct conversation.
-4. Select **Preview agent draft** in Main, a topic, or an agent DM. The text is explicitly simulated, not AI-generated.
-5. In **Review queue**, approve, edit and approve, or reject. Edited releases retain agent authorship. Resolved drafts are available in **Review history**, including original text after edits.
-6. Try **Agent policy** and **Participants** in governance. Limited agents still need review; blocked/suspended agents cannot publish. Approval rechecks author access.
-7. Return to topics/DMs to clear unread indicators. Reload to check browser-local persistence.
+## Implemented in this slice
 
-Search finds conversations by title. Reset asks for confirmation before replacing this browser's demo data.
+- First-admin setup, sign-in, sign-out and seven-day server-side sessions
+- HttpOnly cookies, CSRF protection, password hashing, authentication rate limits
+- A persistent Main conversation and server-derived message authorship
+- Retry-safe message IDs, validation, five-second polling and connection-error states
+- The prototype's sage/dark shell, participant-first layout and mobile treatment
 
-## What this is—and is not
+**Still to build:** additional human accounts/invitations, real topics and DMs, agent connectors, approval governance backed by the server, password recovery, and deployment on Nora. Their live navigation is explicitly marked as coming next. `/demo` still offers those sample flows for design iteration; nothing there is connected to the real database. This is a local development slice, not a hardened production/LAN release.
 
-Implemented: Main, public topics, human-to-participant DMs, visible participant types and sample availability, draft approval/edit/reject, review history, moderation, per-agent outbound approval toggles, local audit history, unread indicators, conversation search, responsive layout, isolated unsent composer text per conversation.
+## Local data and secrets
 
-**This is a single-admin UI prototype, not the complete MVP.** All seeded people, availability, services, and conversations are sample content. There are no real agent connectors, external messages, authentication, tokens, shared server database, or realtime sync. There is no command execution. Admin authority is modeled in domain functions, but client-side data is not a security boundary.
+- `.local/postgres/`: PostgreSQL data, bind-mounted from C:\Nexus
+- `.local/runtime.json`: randomly generated database credentials; never commit or share
+- `.local/keys/`: ASP.NET data-protection keys
+- `.tools/dotnet/`: project-local pinned .NET SDK
+- `.cache/`: NuGet, temporary and tool caches
+- `.browsers/`: local Chromium downloads for browser testing
 
-Data is saved in localStorage under `nexus-prototype-state-v1`, scoped to this browser and origin. Other browsers/ports do not share it. Clearing browser storage removes it. Unsent composer text stays separate per conversation during the session but is not persisted. Local audit records are not tamper-proof. Do not enter sensitive information. Invalid saved top-level data falls back to the sample workspace.
+These paths and .NET bin/obj/test reports are Git-ignored. Vite denies requests for private local directories, including through `/@fs/`. Docker image layers are stored in Docker's managed storage, as authorized. No global .NET SDK installation is required on this machine.
 
-Domain helpers support agent-pair DMs; this iteration does not connect real agent-to-agent messaging. Human account creation/login, integration management, per-action permission policies, withdrawal/cancellation, conversation archiving, and Nora deployment are not implemented.
+**Do not delete `.local` to reset the demo.** Its database is real. Back up the database using PostgreSQL tooling, plus runtime.json and the key directory; copying live PostgreSQL files is not a reliable backup. If credentials are missing while database files remain, setup refuses to generate replacement credentials. There is not yet a password-reset workflow: keep your chosen admin credentials securely.
 
-## Approved future stack remains unchanged
+Browser-only sample data stays under `nexus-prototype-state-v1` and is not imported into PostgreSQL. The sample reset button only resets demo data.
 
-The source docs specify **C# / ASP.NET Core Web API / EF Core / PostgreSQL**, REST-first, selective SignalR, React + TypeScript, and Docker Compose deployment on Nora. This prototype does not replace that architecture with a browser-only production design.
-
-Recommended next vertical slice: introduce the approved API/database with admin bootstrap, a persistent Main conversation, and server-authorized message posting; then replace the local-state adapter. Real integration tokens and governed connector inbox/draft submission follow that foundation.
-
-## Verification
+## Development commands
 
 ```text
-npm test          # domain tests
-npm run test:ui   # Chromium browser flows
-npm run build     # TypeScript check + production bundle
+npm run setup          # start/check Postgres and restore/build the API
+npm start              # start the local workspace
+npm run api            # API only, after build
+npm run dev            # frontend only; proxies /api to 5080
+npm test               # TypeScript unit tests
+npm run test:tooling   # local runtime configuration tests
+npm run test:backend   # real-PostgreSQL integration tests
+npm run test:ui        # preserved demo + private-file serving tests
+npm run test:live      # live UI/API/DB integration + UI-state tests
+npm run build          # typecheck and build frontend
+npm run build:api      # build ASP.NET API
 ```
 
-Verified in this workspace:
-- 19 domain tests passed.
-- 11 browser-flow tests passed.
-- TypeScript and production build passed.
-- npm audit reported zero known vulnerabilities in the installed dependency tree.
-- Desktop and mobile screenshots inspected; artifacts are in `artifacts/`.
+Backend tests create/drop only unique `nexus_test_*` databases. Live browser tests use unique `nexus_ui_test_*` databases on API5081/UI5176, then drop them. They never bootstrap or reset your real `nexus` database. Test key files are generated and ignored. Tests include synthetic test-only passwords; those are not account defaults.
 
-## Project layout
+On a fresh Windows checkout: install Node and Docker Desktop, run `npm ci`, then `python scripts/install-sdk.py` to download the SDK pinned in global.json (SHA-512 verified, extracted locally), and `npm run setup`. Browser tests additionally need Playwright Chromium installed with `PLAYWRIGHT_BROWSERS_PATH` set to the repository's `.browsers` directory. The supplied environment already has these prerequisites. Linux deployments should use the pinned .NET SDK with their own provisioning; Nora deployment is not delivered in this slice.
 
-- `src/App.tsx`: prototype UI and sample workspace state
-- `src/domain.ts`: immutable domain operations and governance/read rules
-- `src/domain.test.ts`: domain regression tests
-- `src/styles.css`, `src/refinements.css`: retained base styles and readability/responsive refinements
-- `tests/workspace.spec.ts`: browser flows
-- `scripts/`: launcher, browser-test wrapper, screenshot capture
-- `docs/`: text extracted from the supplied PDFs and implementation notes
-- `dist/`: verified production build (serve over HTTP; not a double-click HTML bundle)
-- `.tools/`, `.browsers/`, `.cache/`: project-local document tooling, Chromium, and caches
+## Architecture and source
 
-All intentional source, dependency, cache, and artifact writes for this work were directed inside `C:\Nexus`. Supplied PDFs were read from their attachment paths without modification. No global configuration was changed.
+- `backend/Nexus.slnx`: Api, Application, Domain, Infrastructure and Tests
+- `backend/README.md`: API contract, session rules, migrations and limitations
+- `src/LiveWorkspace.tsx`, `src/live-api.ts`: real UI and cookie/CSRF API client
+- `src/App.tsx`, `src/domain.ts`: retained sample prototype
+- `compose.yaml`: digest-pinned PostgreSQL image with project-local data
+- `docs/`: original design PDFs and extracted specifications
+
+REST remains authoritative. Polling is temporary UI refresh, not a replacement for durable database state; SignalR can be added later. Startup applies checked-in EF migrations for local development. Production should use reviewed migration deployment, restricted database privileges, TLS, key protection, pagination and operational backups before broader exposure.

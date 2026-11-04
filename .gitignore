@@ -1,3 +1,9 @@
+# Local server data, generated credentials, and .NET tooling
+.local/
+**/bin/
+**/obj/
+**/TestResults/
+
 # Dependencies and downloaded tooling
 node_modules/
 .browsers/

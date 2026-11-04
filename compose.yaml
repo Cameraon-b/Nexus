@@ -1,0 +1,18 @@
+name: nexus
+services:
+  postgres:
+    image: postgres:18@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
+    environment:
+      POSTGRES_DB: nexus
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: ${NEXUS_POSTGRES_PASSWORD:?Run npm run setup first}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./.local/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped

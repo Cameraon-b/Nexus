@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('finds a conversation and opens its context', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/demo');
   await page.getByRole('button', { name: 'Search conversations' }).click();
   await page.getByPlaceholder('Search this prototype’s conversations…').fill('field');
   await page.locator('.search-results').getByRole('button', {name: /AETHER field notes/}).click();
@@ -10,7 +10,7 @@ test('finds a conversation and opens its context', async ({ page }) => {
 
 test('mobile navigation remains named and readable', async ({ page }) => {
   await page.setViewportSize({width:390,height:844});
-  await page.goto('/');
+  await page.goto('/demo');
   await page.getByRole('button',{name:'Participants',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Participants',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Common room',exact:true}).click();
@@ -19,7 +19,7 @@ test('mobile navigation remains named and readable', async ({ page }) => {
 });
 
 test('rejected draft content remains inspectable only in review history', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/demo');
   await page.getByRole('button',{name:'Open review queue',exact:true}).click();
   await page.getByRole('button',{name:'Reject',exact:true}).click();
   await page.getByRole('button',{name:'Review history',exact:true}).click();
@@ -30,7 +30,7 @@ test('rejected draft content remains inspectable only in review history', async 
 });
 
 test('blocked agent draft attempt shows an error without losing workspace', async ({page}) => {
-  await page.goto('/');
+  await page.goto('/demo');
   await page.getByRole('button',{name:'Open review queue',exact:true}).click();
   await page.locator('.governance-tabs').getByRole('button',{name:'Participants',exact:true}).click();
   await page.locator('.participant-admin-row').filter({hasText:'Hermes'}).getByRole('button',{name:'Block',exact:true}).click();
@@ -41,7 +41,7 @@ test('blocked agent draft attempt shows an error without losing workspace', asyn
 });
 
 test('agent draft can be previewed and reviewed in a direct conversation', async ({page}) => {
-  await page.goto('/');
+  await page.goto('/demo');
   await page.locator('.participant-stack').getByRole('button',{name:/Hermes/}).click();
   await page.getByRole('textbox',{name:'Write a direct message'}).fill('Hello Hermes');
   await page.getByRole('button',{name:'Send',exact:true}).click();
@@ -54,7 +54,7 @@ test('agent draft can be previewed and reviewed in a direct conversation', async
 });
 
 test('opening a topic clears its unread indicator across reloads', async ({page}) => {
-  await page.goto('/');
+  await page.goto('/demo');
   const topic = page.locator('.topic-links').getByRole('button',{name:/Nexus · first mile/});
   await expect(topic.locator('.unread-badge')).toHaveText('1');
   await topic.click();
@@ -65,12 +65,12 @@ test('opening a topic clears its unread indicator across reloads', async ({page}
 
 test('malformed saved state does not blank the app', async ({page}) => {
   await page.addInitScript(()=>localStorage.setItem('nexus-prototype-state-v1','{}'));
-  await page.goto('/');
+  await page.goto('/demo');
   await expect(page.getByRole('heading',{name:'The Common Room',exact:true})).toBeVisible();
 });
 
 test('reset requires confirmation and cancellation preserves messages', async ({page}) => {
-  await page.goto('/');
+  await page.goto('/demo');
   await page.getByRole('textbox',{name:'Write a message',exact:true}).fill('Keep this message');
   await page.getByRole('button',{name:'Send',exact:true}).click();
   let prompted=false;
@@ -81,7 +81,7 @@ test('reset requires confirmation and cancellation preserves messages', async ({
 });
 
 test('creates a topic, posts, and restores history after reload', async ({page}) => {
-  await page.goto('/');
+  await page.goto('/demo');
   await page.getByRole('button',{name:'Create a topical conversation',exact:true}).click();
   await page.getByLabel('Conversation title').fill('Prototype feedback');
   await page.getByLabel('Opening message').fill('Let us refine this together.');
@@ -95,7 +95,7 @@ test('creates a topic, posts, and restores history after reload', async ({page})
 });
 
 test('policy auto-release appears without a review and retains original authorship',async({page})=>{
- await page.goto('/');
+ await page.goto('/demo');
  await page.getByRole('button',{name:'Open review queue',exact:true}).click();
  await page.getByRole('button',{name:'Agent policy',exact:true}).click();
  await page.getByRole('switch',{name:'Require approval for Hermes'}).click();
@@ -106,7 +106,7 @@ test('policy auto-release appears without a review and retains original authorsh
 });
 
 test('conversation drafts stay with their destination', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/demo');
   await page.getByRole('textbox', { name: 'Write a message', exact: true }).fill('Unsent in Main');
   await page.locator('.topic-links').getByRole('button', { name: 'Nexus · first mile' }).click();
   await expect(page.getByRole('textbox', { name: 'Write a message', exact: true })).toHaveValue('');
