@@ -36,6 +36,21 @@ public class SecurityBoundaryTests
         Assert.Contains("secure", cookie.ToLowerInvariant());
         Assert.Contains("httponly", cookie.ToLowerInvariant());
         Assert.Contains("samesite=strict", cookie.ToLowerInvariant());
+        Assert.Contains("expires=", cookie.ToLowerInvariant());
+
+        await TestWorkspace.Csrf(client);
+        var registration = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            email = "production-cookie@example.test",
+            displayName = "Production Cookie",
+            password = "Production-cookie-passphrase!8"
+        });
+        registration.EnsureSuccessStatusCode();
+        var registrationCookie = registration.Headers.GetValues("Set-Cookie").Single(s => s.StartsWith("nexus.session="));
+        Assert.Contains("secure", registrationCookie.ToLowerInvariant());
+        Assert.Contains("httponly", registrationCookie.ToLowerInvariant());
+        Assert.Contains("samesite=strict", registrationCookie.ToLowerInvariant());
+        Assert.Contains("expires=", registrationCookie.ToLowerInvariant());
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
 
 namespace Nexus.Tests;
@@ -26,7 +27,7 @@ public sealed class TestWorkspace : IAsyncDisposable
         workspace.Client = workspace.Host.CreateClient();
         return workspace;
     }
-    public ApiHost NewHost() => new(Connection, $"C:/Nexus/backend/.test-keys/{Name}");
+    public ApiHost NewHost(DbCommandInterceptor? interceptor = null) => new(Connection, $"C:/Nexus/backend/.test-keys/{Name}", interceptor: interceptor);
     public static async Task Csrf(HttpClient client)
     {
         var json = await client.GetFromJsonAsync<JsonElement>("/api/auth/csrf");

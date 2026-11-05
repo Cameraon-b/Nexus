@@ -3,6 +3,8 @@ namespace Nexus.Domain;
 
 public static class IdentityRules
 {
+    public static string? NormalizeEmail(string? email) => email?.Trim().ToLowerInvariant();
+
     public static void ValidateSetup(string? email, string? name, string? password)
     {
         if (string.IsNullOrWhiteSpace(email) || email.Trim().Length > 254 || !MailAddress.TryCreate(email.Trim(), out var parsed) || parsed.Address != email.Trim())

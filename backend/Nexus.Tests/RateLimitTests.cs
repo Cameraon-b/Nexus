@@ -7,6 +7,7 @@ public class RateLimitTests
     [Theory]
     [InlineData("/api/auth/login")]
     [InlineData("/api/auth/bootstrap")]
+    [InlineData("/api/auth/register")]
     public async Task Auth_attempts_are_limited_with_retry_after(string path)
     {
         await using var w = await TestWorkspace.Create();

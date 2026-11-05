@@ -4,18 +4,30 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Nexus.Infrastructure;
 using Npgsql;
 
 namespace Nexus.Tests;
 
-public sealed class ApiHost(string? connection = null, string? keys = null, string environment = "Development") : WebApplicationFactory<Program>
+public sealed class ApiHost(string? connection = null, string? keys = null, string environment = "Development", DbCommandInterceptor? interceptor = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseEnvironment(environment)
         .ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:Nexus"] = connection ?? "Host=127.0.0.1;Port=55432;Username=nexus;Database=nexus_test_placeholder",
             ["Nexus:DataProtectionPath"] = keys ?? "C:/Nexus/backend/.test-keys"
-        }));
+        }))
+        .ConfigureServices(services =>
+        {
+            if (interceptor is null) return;
+            services.RemoveAll<NexusDb>();
+            services.RemoveAll<DbContextOptions<NexusDb>>();
+            services.AddDbContext<NexusDb>(options => options.UseNpgsql(connection).AddInterceptors(interceptor));
+        });
 }
 
 public class ApiTests

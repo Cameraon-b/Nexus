@@ -39,7 +39,8 @@ All JSON uses camelCase. Same-origin frontend proxy only; no permissive CORS pol
 |---|---|---|---|
 | GET | `/api/auth/status` | — | `{requiresBootstrap:boolean}` |
 | GET | `/api/auth/csrf` | — | `{token:string}` plus `nexus.csrf` cookie |
-| POST | `/api/auth/bootstrap` | `{email,displayName,password}` | User DTO and `nexus.session` cookie |
+| POST | `/api/auth/bootstrap` | `{email,displayName,password}` | Admin User DTO and `nexus.session` cookie |
+| POST | `/api/auth/register` | `{email,displayName,password}` | Non-admin User DTO and `nexus.session` cookie |
 | POST | `/api/auth/login` | `{email,password}` | User DTO and `nexus.session` cookie |
 | GET | `/api/auth/me` | Session cookie | User DTO |
 | POST | `/api/auth/logout` | Session cookie | 204, stored session revoked and cookie deleted |
@@ -47,7 +48,7 @@ All JSON uses camelCase. Same-origin frontend proxy only; no permissive CORS pol
 | GET | `/api/conversations/main/messages` | Session cookie | Message DTO array, chronological order |
 | POST | `/api/conversations/main/messages` | `{body,clientRequestId:UUID}` and session cookie | Message DTO, HTTP 200 (also on identical retry) |
 
-Every unsafe request, including bootstrap/login/logout, requires the matching `nexus.csrf` cookie **and** `X-CSRF-TOKEN` request header from `/api/auth/csrf`. Fetch CSRF before bootstrap/login and after identity transitions. Missing/invalid CSRF is 400. Authentication is checked on every protected request against PostgreSQL. Anonymous access with valid CSRF is 401.
+Every unsafe request, including bootstrap/register/login/logout, requires the matching `nexus.csrf` cookie **and** `X-CSRF-TOKEN` request header from `/api/auth/csrf`. Fetch CSRF before bootstrap/register/login and after identity transitions. Missing/invalid CSRF is 400. Authentication is checked on every protected request against PostgreSQL. Anonymous access with valid CSRF is 401.
 
 User DTO:
 
@@ -73,9 +74,9 @@ Message DTO:
 
 The author always comes from the resolved session's participant, never client input. Unknown fields such as client-supplied authorId are ignored. Body is trimmed and must contain 1–5000 UTF-16 code units. clientRequestId must be a nonzero UUID. Idempotency is per author and request ID, with a database unique index and transaction-level advisory lock. Retrying the same normalized body returns the original message; a different normalized body returns 409.
 
-Bootstrap validates email, display name (1–100 trimmed characters), and password (12–128 characters). Email is trimmed/lowercased. A PostgreSQL transaction/advisory lock makes concurrent setup attempts atomic; only one succeeds, all subsequent valid setup requests return 409. Passwords use ASP.NET Identity V3 hashing configured for 210,000 iterations. Session tokens are random 256-bit opaque values; only SHA-256 hashes are stored, with fixed seven-day expiry and revocation timestamp. Cookies are HttpOnly, SameSite=Strict, Path=/, Secure outside Development.
+Bootstrap and registration validate email, display name (1–100 trimmed characters), and password (12–128 characters). Email is trimmed/lowercased. Registration is available only after bootstrap and atomically creates a non-admin account, active human participant, Main membership and session. Registration before bootstrap and normalized duplicate emails return 409. A shared PostgreSQL transaction/advisory lock preserves first-admin setup races and makes concurrent duplicate registration deterministic without orphan rows. Passwords use ASP.NET Identity V3 hashing configured for 210,000 iterations. Session tokens are random 256-bit opaque values; only SHA-256 hashes are stored, with fixed seven-day expiry and revocation timestamp. Cookies are HttpOnly, SameSite=Strict, Path=/, Secure outside Development.
 
-Bootstrap/login share a per-remote-IP fixed-window limit of 10 requests/minute per app host. Limit responses are 429 ProblemDetails with `Retry-After: 60`. Validation/CSRF are safe 400 ProblemDetails; wrong credentials are a generic 401 ProblemDetails; conflicts are 409 ProblemDetails. Unexpected failures return generic 500 ProblemDetails; server logs retain diagnostic details without enabled sensitive-data logging.
+Bootstrap/register/login share a per-remote-IP fixed-window limit of 10 requests/minute per app host. Limit responses are 429 ProblemDetails with `Retry-After: 60`. Validation/CSRF are safe 400 ProblemDetails; wrong credentials are a generic 401 ProblemDetails; conflicts are 409 ProblemDetails. Unexpected failures return generic 500 ProblemDetails; server logs retain diagnostic details without enabled sensitive-data logging.
 
 ## Verify
 
@@ -87,10 +88,10 @@ node scripts/dotnet.mjs test backend/Nexus.Tests --configuration Release --logge
 node scripts/dotnet.mjs format backend/Nexus.slnx --no-restore --verify-no-changes
 ```
 
-Verified: Release build has zero warnings/errors; 37 PostgreSQL integration cases pass, none skipped. Machine-readable evidence: `backend/TestResults/integration.trx`. EF model matches the checked-in migrations.
+Verified: Release build has zero warnings/errors; 51 PostgreSQL integration cases pass, none skipped. Machine-readable evidence: `backend/TestResults/integration.trx`. EF model matches the checked-in migrations.
 
 ## Scope and caveats
 
-This is the first-admin/Main-conversation slice, not the full approved MVP. No signup/invitations, password reset, MFA, topical/direct conversations, agents, moderation, realtime delivery or pagination is implemented. Reads currently return all messages. No default account exists.
+This is the local multi-human/Main-conversation slice, not the full approved MVP. Open local registration is supported after first-admin bootstrap; invitations, password reset, MFA, topical/direct conversations, agents, moderation, realtime delivery and pagination are not implemented. Reads currently return all messages. No default account exists.
 
 Local-prototype migration-at-startup requires schema privileges. Production rollout should separately apply reviewed migrations and restrict app DB privileges. Rate counters are process-local and reset on restart; a shared-IP reverse proxy shares the limit unless deliberately configured otherwise. There is no session-row cleanup job or sliding renewal. Protect runtime credentials and data-protection key files with filesystem permissions; key files are not explicitly encrypted at rest. Use TLS and an appropriately secured reverse proxy outside local development.

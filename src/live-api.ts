@@ -30,7 +30,7 @@ export class WorkspaceApi {
   const response = await fetch(`/api${path}`, {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':this.token!},body:body === undefined ? undefined : JSON.stringify(body)});
   return decode<T>(response);
  }
- async authenticate(mode: 'login'|'bootstrap', body: unknown) {
+ async authenticate(mode: 'login'|'bootstrap'|'register', body: unknown) {
   await this.post(`/auth/${mode}`, body);
   this.token = undefined;
   // Authentication already succeeded. Let the UI recheck session/setup even if

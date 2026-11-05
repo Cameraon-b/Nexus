@@ -10,19 +10,19 @@ From `C:\Nexus`, run `npm start`, or double-click **Start Nexus.cmd** with Docke
 - Sample prototype: **http://127.0.0.1:5174/demo**
 - API: loopback port **5080**; PostgreSQL: loopback port **55432**
 
-On first visit, create your own administrator account (display name, email, password of 12–128 characters). No default account or test credentials are installed in your actual workspace. Post in the Common Room, reload, sign out, and sign in again: messages are stored in PostgreSQL, not browser localStorage. The first admin is also a visible human participant. Setup closes atomically after the first account is created.
+On first visit, create your own administrator account (display name, email, password of 12–128 characters). No default account or test credentials are installed in your actual workspace. After setup, another local user can choose **Create account** on the sign-in screen. Each account becomes a visible human participant and joins the Common Room automatically. Messages and identities are stored in PostgreSQL, not browser localStorage. Setup closes atomically after the first account is created.
 
 `npm start` brings up PostgreSQL, builds the API, starts missing services, and reuses an existing Nexus frontend. Ctrl+C stops API/UI processes owned by that launcher. PostgreSQL stays running to preserve your workspace. To stop only the database, run `docker stop nexus-postgres-1`; the launcher starts it again later.
 
 ## Implemented in this slice
 
-- First-admin setup, sign-in, sign-out and seven-day server-side sessions
+- First-admin setup, additional local human registration, sign-in, sign-out and seven-day server-side sessions
 - HttpOnly cookies, CSRF protection, password hashing, authentication rate limits
-- A persistent Main conversation and server-derived message authorship
-- Retry-safe message IDs, validation, five-second polling and connection-error states
+- A shared persistent Main conversation with server-derived authorship for each human
+- Retry-safe message IDs, validation, five-second participant/message polling and connection-error states
 - The prototype's sage/dark shell, participant-first layout and mobile treatment
 
-**Still to build:** additional human accounts/invitations, real topics and DMs, agent connectors, approval governance backed by the server, password recovery, and deployment on Nora. Their live navigation is explicitly marked as coming next. `/demo` still offers those sample flows for design iteration; nothing there is connected to the real database. This is a local development slice, not a hardened production/LAN release.
+**Still to build:** invitations or closed registration policy, real topics and DMs, agent connectors, approval governance backed by the server, password recovery, and deployment on Nora. Their live navigation is explicitly marked as coming next. `/demo` still offers those sample flows for design iteration; nothing there is connected to the real database. Registration is intended only for this loopback local-development workspace; this is not a hardened production/LAN release.
 
 ## Local data and secrets
 

@@ -17,7 +17,11 @@ test('messages persist through reload, retry with one request identity, and poll
   if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'fixture-token'}});
   if(path.endsWith('/me'))return route.fulfill({status:expired?401:200,json:expired?{title:'Session ended'}:user});
-  if(path.endsWith('/home'))return route.fulfill({json:{participants:[person],conversation:{id:'main',title:'The Common Room',description:'Shared',participantIds:[person.id]},messages}});
+  if(path.endsWith('/home')){
+   if(expired)return route.fulfill({status:401,json:{title:'Session ended'}});
+   if(offline)return route.fulfill({status:503,json:{title:'Unavailable'}});
+   return route.fulfill({json:{participants:[person],conversation:{id:'main',title:'The Common Room',description:'Shared',participantIds:[person.id]},messages}});
+  }
   if(path.endsWith('/messages')) {
    if(expired)return route.fulfill({status:401,json:{title:'Session ended'}});
    if(offline)return route.fulfill({status:503,json:{title:'Unavailable'}});
@@ -98,6 +102,136 @@ test('email accepts the backend limit of 254 characters', async ({page}) => {
  await page.getByLabel('Email').fill(email);
  await expect(page.getByLabel('Email')).toHaveValue(email);
 });
+test('a stale bootstrap conflict rediscovers existing-workspace authentication without retrying bootstrap', async ({page}) => {
+ let requiresBootstrap=true;let bootstrapPosts=0;let statusReads=0;
+ await page.route('**/api/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status')){statusReads++;return route.fulfill({json:{requiresBootstrap}});}
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'stale-bootstrap-token'}});
+  if(path.endsWith('/bootstrap')){
+   bootstrapPosts++;requiresBootstrap=false;
+   return route.fulfill({status:409,json:{title:'Workspace already initialized'}});
+  }
+  if(path.endsWith('/me'))return route.fulfill({status:401,json:{title:'Sign in required'}});
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ await page.getByLabel('Display name').fill('Second Browser');
+ await page.getByLabel('Email').fill('second@example.test');
+ await page.getByLabel('Password',{exact:true}).fill('fixture-only-password');
+ await page.getByRole('button',{name:'Create workspace'}).click();
+ await expect(page.getByRole('tab',{name:'Sign in'})).toBeVisible();
+ await expect(page.getByRole('tab',{name:'Create account'})).toBeVisible();
+ await expect(page.getByLabel('Email')).toHaveValue('second@example.test');
+ await page.getByRole('tab',{name:'Create account'}).click();
+ await expect(page.getByLabel('Display name')).toHaveValue('Second Browser');
+ expect(bootstrapPosts).toBe(1);
+ expect(statusReads).toBeGreaterThan(1);
+});
+test('a duplicate registration conflict remains a visible error', async ({page}) => {
+ let statusReads=0;let registerPosts=0;
+ await page.route('**/api/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status')){statusReads++;return route.fulfill({json:{requiresBootstrap:false}});}
+  if(path.endsWith('/me'))return route.fulfill({status:401,json:{title:'Sign in required'}});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'registration-token'}});
+  if(path.endsWith('/register')){registerPosts++;return route.fulfill({status:409,json:{title:'Email already registered'}});}
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ await page.getByRole('tab',{name:'Create account'}).click();
+ await page.getByLabel('Display name').fill('Duplicate Human');
+ await page.getByLabel('Email').fill('duplicate@example.test');
+ await page.getByLabel('Password',{exact:true}).fill('fixture-only-password');
+ const statusReadsBeforeSubmit=statusReads;
+ await page.getByRole('button',{name:'Create account',exact:true}).click();
+ await expect(page.getByRole('alert')).toHaveText('Email already registered');
+ expect(registerPosts).toBe(1);
+ expect(statusReads).toBe(statusReadsBeforeSubmit);
+});
+test('a returning visitor can switch to registration and enter the Common Room', async ({page}) => {
+ let signedIn=false;let authPosts=0;let tokenCount=0;
+ await page.route('**/api/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({status:signedIn?200:401,json:signedIn?registeredUser:{title:'Sign in required'}});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:`register-token-${++tokenCount}`}});
+  if(path.endsWith('/register')){
+   authPosts++;
+   expect(route.request().method()).toBe('POST');
+   expect(route.request().headers()['x-csrf-token']).toBe('register-token-1');
+   expect(route.request().postDataJSON()).toEqual({displayName:registeredUser.displayName,email:registeredUser.email,password:'twelve-chars!'});
+   signedIn=true;return route.fulfill({json:registeredUser});
+  }
+  if(path.endsWith('/home'))return route.fulfill({json:{participants:[registeredPerson],conversation:{id:'main',title:'The Common Room',description:'Shared',participantIds:[registeredPerson.id]},messages:[]}});
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ await expect(page.getByRole('heading',{name:'Welcome back'})).toBeVisible();
+ await page.getByRole('tab',{name:'Create account'}).click();
+ await expect(page.getByRole('heading',{name:'Create your account'})).toBeVisible();
+ await expect(page.getByLabel('Display name')).toHaveAttribute('maxlength','100');
+ await expect(page.getByLabel('Email')).toHaveAttribute('maxlength','254');
+ await expect(page.getByLabel('Password',{exact:true})).toHaveAttribute('minlength','12');
+ await expect(page.getByLabel('Password',{exact:true})).toHaveAttribute('maxlength','128');
+ await page.getByLabel('Display name').fill(registeredUser.displayName);
+ await page.getByLabel('Email').fill(registeredUser.email);
+ await page.getByLabel('Password',{exact:true}).fill('twelve-chars!');
+ await page.getByRole('button',{name:'Create account',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'The Common Room'})).toBeVisible();
+ expect(authPosts).toBe(1);expect(tokenCount).toBe(2);
+});
+test('home polling reveals a newcomer without replacing an unsent draft', async ({page}) => {
+ let homeReads=0;
+ await page.route('**/api/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/home')){
+   homeReads++;
+   const participants=homeReads>1?[person,registeredPerson]:[person];
+   return route.fulfill({json:{participants,conversation:{id:'main',title:'The Common Room',description:'Shared',participantIds:participants.map(item=>item.id)},messages:[]}});
+  }
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ const composer=page.getByLabel('Message the Common Room');
+ await composer.fill('Keep this draft while people arrive');
+ await expect(page.getByText(registeredPerson.name,{exact:true})).toBeVisible({timeout:7000});
+ await expect(composer).toHaveValue('Keep this draft while people arrive');
+ expect(homeReads).toBeGreaterThan(1);
+});
+test('a delayed stale home poll cannot erase a locally delivered message', async ({page}) => {
+ let homeReads=0;let completedDelayedPolls=0;let releasePoll!:()=>void;let markPollStarted!:()=>void;
+ const delayedPoll=new Promise<void>(resolve=>{releasePoll=resolve;});
+ const pollStarted=new Promise<void>(resolve=>{markPollStarted=resolve;});
+ const emptyRoom={participants:[person],conversation:{id:'main',title:'The Common Room',description:'Shared',participantIds:[person.id]},messages:[]};
+ await page.route('**/api/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'message-token'}});
+  if(path.endsWith('/home')){
+   homeReads++;
+   if(homeReads>1){markPollStarted();await delayedPoll;await route.fulfill({json:emptyRoom});completedDelayedPolls++;return;}
+   return route.fulfill({json:emptyRoom});
+  }
+  if(path.endsWith('/messages')&&route.request().method()==='POST'){
+   const body=route.request().postDataJSON();
+   return route.fulfill({json:{id:'locally-delivered',conversationId:'main',authorId:person.id,body:body.body,state:'delivered',createdAt:new Date().toISOString()}});
+  }
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ await pollStarted;
+ const composer=page.getByLabel('Message the Common Room');
+ await composer.fill('Do not erase this message');
+ await composer.press('Enter');
+ await expect(page.getByText('Do not erase this message',{exact:true})).toBeVisible();
+ releasePoll();
+ await expect.poll(()=>completedDelayedPolls).toBe(1);
+ await expect(page.getByText('Do not erase this message',{exact:true})).toBeVisible();
+});
 test('composer caps input at the backend limit of 5000 characters', async ({page}) => {
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
@@ -111,7 +245,7 @@ test('composer caps input at the backend limit of 5000 characters', async ({page
  await composer.fill('a'.repeat(5001));
  await expect(composer).toHaveValue('a'.repeat(5000));
 });
-for (const mode of ['bootstrap','login'] as const) {
+for (const mode of ['bootstrap','login','register'] as const) {
  test(`${mode} recovers from post-auth CSRF failure without repeating authentication`, async ({page}) => {
   let signedIn=false;let authPosts=0;let tokens=0;let sessionReads=0;
   await page.route('**/api/**',route=>{
@@ -128,10 +262,11 @@ for (const mode of ['bootstrap','login'] as const) {
    return route.fulfill({json:[]});
   });
   await page.goto('/');
-  if(mode==='bootstrap')await page.getByLabel('Display name').fill(user.displayName);
+  if(mode==='register')await page.getByRole('tab',{name:'Create account'}).click();
+  if(mode!=='login')await page.getByLabel('Display name').fill(user.displayName);
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Password',{exact:true}).fill('fixture-only-password');
-  await page.getByRole('button',{name:mode==='bootstrap'?'Create workspace':'Sign in',exact:true}).click();
+  await page.getByRole('button',{name:mode==='bootstrap'?'Create workspace':mode==='register'?'Create account':'Sign in',exact:true}).click();
   await expect(page.getByRole('heading',{name:'The Common Room'})).toBeVisible();
   await expect(page.getByRole('button',{name:'Create workspace'})).toHaveCount(0);
   expect(sessionReads).toBeGreaterThan(0);
@@ -143,6 +278,8 @@ for (const mode of ['bootstrap','login'] as const) {
 // Every API request is intercepted. These fixtures never initialize a real database.
 const user = {id:'fixture-user',participantId:'fixture-person',displayName:'Test Member',email:'member@example.test',isAdmin:true};
 const person = {id:user.participantId,name:user.displayName,kind:'human',state:'active',availability:'available',isAdmin:true};
+const registeredUser = {id:'registered-user',participantId:'registered-person',displayName:'New Human',email:'new@example.test',isAdmin:false};
+const registeredPerson = {id:registeredUser.participantId,name:registeredUser.displayName,kind:'human',state:'active',availability:'available',isAdmin:false};
 test('first run creates an authenticated participant-first room and signs out', async ({page}) => {
  let signedIn = false; let bootstrap = true;
  await page.route('**/api/**', async route => {

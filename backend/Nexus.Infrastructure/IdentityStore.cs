@@ -15,7 +15,7 @@ public sealed class IdentityStore(NexusDb db, IPasswordHasher<Account> hasher) :
         await using var transaction = await db.Database.BeginTransactionAsync();
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(7843951001)");
         if (await db.Accounts.AnyAsync()) throw new RuleViolation(409, "Workspace setup is already complete.");
-        var account = new Account { Email = request.Email.Trim().ToLowerInvariant(), DisplayName = request.DisplayName.Trim(), IsAdmin = true };
+        var account = new Account { Email = IdentityRules.NormalizeEmail(request.Email)!, DisplayName = request.DisplayName.Trim(), IsAdmin = true };
         account.PasswordHash = hasher.HashPassword(account, request.Password);
         db.Participants.Add(new Participant { Id = account.ParticipantId, Name = account.DisplayName, IsAdmin = true });
         db.Conversations.Add(new Conversation());
@@ -25,9 +25,26 @@ public sealed class IdentityStore(NexusDb db, IPasswordHasher<Account> hasher) :
         await transaction.CommitAsync();
         return result;
     }
+    public async Task<SessionResult> Register(RegisterRequest request)
+    {
+        IdentityRules.ValidateSetup(request.Email, request.DisplayName, request.Password);
+        var email = IdentityRules.NormalizeEmail(request.Email)!;
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(7843951001)");
+        if (!await db.Accounts.AnyAsync()) throw new RuleViolation(409, "Workspace setup must be completed before registration.");
+        if (await db.Accounts.AnyAsync(a => a.Email == email)) throw new RuleViolation(409, "An account with that email already exists.");
+        var account = new Account { Email = email, DisplayName = request.DisplayName.Trim() };
+        account.PasswordHash = hasher.HashPassword(account, request.Password);
+        db.Participants.Add(new Participant { Id = account.ParticipantId, Name = account.DisplayName });
+        db.Memberships.Add(new Membership { ParticipantId = account.ParticipantId });
+        db.Accounts.Add(account);
+        var result = await Issue(account);
+        await transaction.CommitAsync();
+        return result;
+    }
     public async Task<SessionResult> Login(LoginRequest request)
     {
-        var email = request.Email?.Trim().ToLowerInvariant();
+        var email = IdentityRules.NormalizeEmail(request.Email);
         var account = await db.Accounts.SingleOrDefaultAsync(a => a.Email == email);
         if (account is null || request.Password is null || request.Password.Length > 128 || hasher.VerifyHashedPassword(account, account.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
             throw new RuleViolation(401, "Invalid email or password.");

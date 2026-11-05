@@ -7,7 +7,8 @@ type User = {id:string; email:string; displayName:string; participantId:string; 
 type Person = {id:string; name:string; kind:'human'; state:'active'; availability:'available'; isAdmin:boolean; description?:string};
 type Message = {id:string; conversationId:string; authorId:string; body:string; state:'delivered'; createdAt:string};
 type Room = {participants:Person[]; conversation:{id:string; title:string; description:string; participantIds:string[]}; messages:Message[]};
-type Screen = {kind:'loading'} | {kind:'error'; message:string} | {kind:'auth'; bootstrap:boolean; notice?:string} | {kind:'room'; user:User; room:Room};
+type AuthDraft = {email:string; displayName:string};
+type Screen = {kind:'loading'} | {kind:'error'; message:string} | {kind:'auth'; bootstrap:boolean; notice?:string; draft?:AuthDraft} | {kind:'room'; user:User; room:Room};
 const errorText = (error:unknown) => error instanceof ApiError ? error.message : 'Cannot reach the local server. Check that it is running, then retry.';
 function Brand() { return <div className="brand-lockup"><div className="brand-mark" aria-hidden="true"><span/><span/><span/><span/></div><div><div className="brand-name">nexus</div><div className="brand-sub">LOCAL WORKSPACE</div></div></div>; }
 function Avatar({name}:{name:string}) { return <span className="avatar avatar-sage" aria-hidden="true">{name.trim().slice(0,1).toUpperCase()}</span>; }
@@ -16,6 +17,7 @@ export default function LiveWorkspace() {
  const [api,setApi] = useState(() => new WorkspaceApi());
  const [screen,setScreen] = useState<Screen>({kind:'loading'});
  const [attempt,setAttempt] = useState(0);
+ const authDraft = useRef<AuthDraft>();
  useEffect(() => {
   const controller = new AbortController();
   setScreen({kind:'loading'});
@@ -26,7 +28,7 @@ export default function LiveWorkspace() {
     if (status.requiresBootstrap) {setScreen({kind:'auth',bootstrap:true}); return;}
     let user:User;
     try { user = await api.get<User>('/auth/me',controller.signal); }
-    catch (error) {if(error instanceof ApiError && error.status === 401) {if(!controller.signal.aborted)setScreen({kind:'auth',bootstrap:false});return;} throw error;}
+    catch (error) {if(error instanceof ApiError && error.status === 401) {if(!controller.signal.aborted){setScreen({kind:'auth',bootstrap:false,draft:authDraft.current});authDraft.current=undefined;}return;} throw error;}
     const room = await api.get<Room>('/workspace/home',controller.signal);
     if(!controller.signal.aborted)setScreen({kind:'room',user,room});
    } catch(error) {
@@ -43,24 +45,28 @@ export default function LiveWorkspace() {
  return <div className="live-gate"><aside><Brand/><div className="live-intro"><p className="eyebrow">A PLACE TO THINK TOGETHER</p><h2>Conversation first.<br/>People at the center.</h2><p>Your local workspace begins with a shared common room.</p></div><a href="/demo">Explore the sample prototype ↗</a></aside><main className="live-auth-panel">
  {screen.kind === 'loading' && <p role="status">Connecting to your local workspace…</p>}
  {screen.kind === 'error' && <section><h1>Workspace unavailable</h1><p role="alert">{screen.message}</p><button className="button primary" onClick={() => setAttempt(a=>a+1)}>Retry connection</button><p>No sample data has been loaded.</p></section>}
- {screen.kind === 'auth' && <AuthForm api={api} bootstrap={screen.bootstrap} notice={screen.notice} onAuthenticated={() => setAttempt(a=>a+1)}/>}
+ {screen.kind === 'auth' && <AuthForm api={api} bootstrap={screen.bootstrap} notice={screen.notice} initialValues={screen.draft} onAuthenticated={() => setAttempt(a=>a+1)} onBootstrapConflict={draft => {authDraft.current=draft;setAttempt(a=>a+1);}}/>}
  </main></div>;
 }
-function AuthForm({api,bootstrap,notice,onAuthenticated}:{api:WorkspaceApi;bootstrap:boolean;notice?:string;onAuthenticated:()=>void}) {
- const [values,setValues] = useState({email:'',displayName:'',password:''});
+function AuthForm({api,bootstrap,notice,initialValues,onAuthenticated,onBootstrapConflict}:{api:WorkspaceApi;bootstrap:boolean;notice?:string;initialValues?:AuthDraft;onAuthenticated:()=>void;onBootstrapConflict:(draft:AuthDraft)=>void}) {
+ const [mode,setMode] = useState<'login'|'register'>(bootstrap?'register':'login');
+ const [values,setValues] = useState({email:initialValues?.email??'',displayName:initialValues?.displayName??'',password:''});
  const [pending,setPending] = useState(false);
  const lock = useRef(false);
  const [error,setError] = useState('');
  const [fields,setFields] = useState<Record<string,string[]>>({});
+ const creating = bootstrap||mode==='register';
+ function switchMode(next:'login'|'register') {setMode(next);setValues(current=>({...current,password:''}));setFields({});setError('');}
  async function submit(event:FormEvent) {
   event.preventDefault();if(lock.current)return;lock.current=true;setPending(true);setError('');setFields({});
-  try {await api.authenticate(bootstrap?'bootstrap':'login',bootstrap?values:{email:values.email,password:values.password});setValues({email:'',displayName:'',password:''});onAuthenticated();}
-  catch(error) {setError(errorText(error));if(error instanceof ApiError)setFields(error.fields);}
+  const authMode=bootstrap?'bootstrap':mode;
+  try {await api.authenticate(authMode,creating?values:{email:values.email,password:values.password});setValues({email:'',displayName:'',password:''});onAuthenticated();}
+  catch(error) {if(bootstrap&&error instanceof ApiError&&error.status===409){onBootstrapConflict({email:values.email,displayName:values.displayName});return;}setError(errorText(error));if(error instanceof ApiError)setFields(error.fields);}
   finally {lock.current=false;setPending(false);}
  }
- return <form className="live-auth-form" onSubmit={submit}><p className="eyebrow">{bootstrap?'FIRST RUN':'YOUR LOCAL WORKSPACE'}</p><h1>{bootstrap?'Bring your workspace to life':'Welcome back'}</h1><p>{bootstrap?'Create the first administrator account. You will appear as a participant in the Common Room.':'Sign in to return to your conversations.'}</p>{notice && <p role="status">{notice}</p>}
- {(bootstrap?['displayName','email','password']:['email','password']).map(key => {const name=key as keyof typeof values;return <div className="live-field" key={name}><label htmlFor={`auth-${name}`}>{name==='displayName'?'Display name':name==='email'?'Email':'Password'}</label><input id={`auth-${name}`} name={name} type={name==='password'?'password':name==='email'?'email':'text'} autoComplete={name==='password'?(bootstrap?'new-password':'current-password'):name==='email'?'username':'name'} required minLength={name==='password'&&bootstrap?12:undefined} maxLength={name==='password'?128:name==='email'?254:100} value={values[name]} disabled={pending} aria-invalid={!!fields[name]?.length} aria-describedby={fields[name]?.length?`${name}-error`:name==='password'&&bootstrap?'password-help':undefined} onChange={event=>{setValues({...values,[name]:event.target.value});setFields({...fields,[name]:[]});setError('');}}/>{fields[name]?.length>0 && <p className="live-error" id={`${name}-error`}>{fields[name].join(' ')}</p>}</div>;})}
- {bootstrap && <small id="password-help">Use 12–128 characters for your password.</small>}{error && <p role="alert" className="live-error">{error}</p>}<button className="button primary" disabled={pending}>{pending?'Connecting…':bootstrap?'Create workspace':'Sign in'}</button></form>;
+ return <form className="live-auth-form" onSubmit={submit}>{!bootstrap&&<div className="live-auth-switch" role="tablist" aria-label="Authentication mode"><button type="button" role="tab" className={mode==='login'?'active':''} aria-selected={mode==='login'} disabled={pending} onClick={()=>switchMode('login')}>Sign in</button><button type="button" role="tab" className={mode==='register'?'active':''} aria-selected={mode==='register'} disabled={pending} onClick={()=>switchMode('register')}>Create account</button></div>}<p className="eyebrow">{bootstrap?'FIRST RUN':creating?'JOIN YOUR LOCAL WORKSPACE':'YOUR LOCAL WORKSPACE'}</p><h1>{bootstrap?'Bring your workspace to life':creating?'Create your account':'Welcome back'}</h1><p>{bootstrap?'Create the first administrator account. You will appear as a participant in the Common Room.':creating?'Join the workspace as a human participant in the Common Room.':'Sign in to return to your conversations.'}</p>{notice && <p role="status">{notice}</p>}
+ {(creating?['displayName','email','password']:['email','password']).map(key => {const name=key as keyof typeof values;return <div className="live-field" key={name}><label htmlFor={`auth-${name}`}>{name==='displayName'?'Display name':name==='email'?'Email':'Password'}</label><input id={`auth-${name}`} name={name} type={name==='password'?'password':name==='email'?'email':'text'} autoComplete={name==='password'?(creating?'new-password':'current-password'):name==='email'?'username':'name'} required minLength={name==='password'&&creating?12:undefined} maxLength={name==='password'?128:name==='email'?254:100} value={values[name]} disabled={pending} aria-invalid={!!fields[name]?.length} aria-describedby={fields[name]?.length?`${name}-error`:name==='password'&&creating?'password-help':undefined} onChange={event=>{setValues({...values,[name]:event.target.value});setFields({...fields,[name]:[]});setError('');}}/>{fields[name]?.length>0 && <p className="live-error" id={`${name}-error`}>{fields[name].join(' ')}</p>}</div>;})}
+ {creating && <small id="password-help">Use 12–128 characters for your password.</small>}{error && <p role="alert" className="live-error">{error}</p>}<button className="button primary" disabled={pending}>{pending?'Connecting…':bootstrap?'Create workspace':creating?'Create account':'Sign in'}</button></form>;
 }
 function MainRoom({api,user,initialRoom,onExpired,onLogout}:{api:WorkspaceApi;user:User;initialRoom:Room;onExpired:()=>void;onLogout:()=>void}) {
  const [room,setRoom] = useState(initialRoom);
@@ -79,9 +85,9 @@ function MainRoom({api,user,initialRoom,onExpired,onLogout}:{api:WorkspaceApi;us
   async function refresh() {
    const startedAt=revision.current;
    try {
-    const messages=await api.get<Message[]>('/conversations/main/messages',controller.signal);
+    const latest=await api.get<Room>('/workspace/home',controller.signal);
     if(controller.signal.aborted)return;
-    if(startedAt===revision.current)setRoom(current=>({...current,messages}));
+    if(startedAt===revision.current)setRoom(latest);
     setConnected(true);
    } catch(error) {
     if(controller.signal.aborted)return;

@@ -57,6 +57,13 @@ app.MapPost("/api/auth/bootstrap", async (BootstrapRequest request, IIdentitySto
     return Results.Ok(result.User);
 }).RequireRateLimiting("auth");
 
+app.MapPost("/api/auth/register", async (RegisterRequest request, IIdentityStore store, HttpContext context) =>
+{
+    var result = await store.Register(request);
+    context.Response.Cookies.Append("nexus.session", result.Token, new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = !app.Environment.IsDevelopment(), Expires = result.ExpiresAt, Path = "/" });
+    return Results.Ok(result.User);
+}).RequireRateLimiting("auth");
+
 app.MapPost("/api/auth/login", async (LoginRequest request, IIdentityStore store, HttpContext context) =>
 {
     var result = await store.Login(request);

@@ -17,4 +17,20 @@ public class CsrfTests
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.True((await w.Client.GetFromJsonAsync<JsonElement>("/api/auth/status")).GetProperty("requiresBootstrap").GetBoolean());
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Registration_requires_matching_csrf_cookie_and_header(bool forged)
+    {
+        await using var w = await TestWorkspace.Create();
+        await w.Bootstrap();
+        using var client = w.Host.CreateClient();
+        if (forged) client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", "forged");
+
+        var response = await client.PostAsJsonAsync("/api/auth/register", new { email = "human@example.test", displayName = "Human", password = "Human-only-long-passphrase!8" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
 }
