@@ -18,7 +18,7 @@ public sealed class IdentityStore(NexusDb db, IPasswordHasher<Account> hasher) :
         var account = new Account { Email = IdentityRules.NormalizeEmail(request.Email)!, DisplayName = request.DisplayName.Trim(), IsAdmin = true };
         account.PasswordHash = hasher.HashPassword(account, request.Password);
         db.Participants.Add(new Participant { Id = account.ParticipantId, Name = account.DisplayName, IsAdmin = true });
-        db.Conversations.Add(new Conversation());
+        db.Conversations.Add(Conversation.CreateMain());
         db.Memberships.Add(new Membership { ParticipantId = account.ParticipantId });
         db.Accounts.Add(account);
         var result = await Issue(account);
@@ -33,10 +33,15 @@ public sealed class IdentityStore(NexusDb db, IPasswordHasher<Account> hasher) :
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(7843951001)");
         if (!await db.Accounts.AnyAsync()) throw new RuleViolation(409, "Workspace setup must be completed before registration.");
         if (await db.Accounts.AnyAsync(a => a.Email == email)) throw new RuleViolation(409, "An account with that email already exists.");
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(7843951002)");
         var account = new Account { Email = email, DisplayName = request.DisplayName.Trim() };
         account.PasswordHash = hasher.HashPassword(account, request.Password);
         db.Participants.Add(new Participant { Id = account.ParticipantId, Name = account.DisplayName });
-        db.Memberships.Add(new Membership { ParticipantId = account.ParticipantId });
+        var publicConversationIds = await db.Conversations
+            .Where(c => c.State == "active" && (c.Kind == "main" || c.Kind == "topical"))
+            .Select(c => c.Id)
+            .ToArrayAsync();
+        db.Memberships.AddRange(publicConversationIds.Select(id => new Membership { ConversationId = id, ParticipantId = account.ParticipantId }));
         db.Accounts.Add(account);
         var result = await Issue(account);
         await transaction.CommitAsync();

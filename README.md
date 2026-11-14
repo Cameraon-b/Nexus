@@ -18,11 +18,13 @@ On first visit, create your own administrator account (display name, email, pass
 
 - First-admin setup, additional local human registration, sign-in, sign-out and seven-day server-side sessions
 - HttpOnly cookies, CSRF protection, password hashing, authentication rate limits
-- A shared persistent Main conversation with server-derived authorship for each human
-- Retry-safe message IDs, validation, five-second participant/message polling and connection-error states
+- A shared persistent Main conversation plus public topical conversations with server-derived authorship
+- Topic creation with title, description, opening message, all-human membership, retry-safe IDs, and per-conversation drafts
+- Retry-safe message IDs, validation, five-second participant/conversation/message polling and connection-error states
+- Responsive, keyboard-accessible topic navigation and creation dialog
 - The prototype's sage/dark shell, participant-first layout and mobile treatment
 
-**Still to build:** invitations or closed registration policy, real topics and DMs, agent connectors, approval governance backed by the server, password recovery, and deployment on Nora. Their live navigation is explicitly marked as coming next. `/demo` still offers those sample flows for design iteration; nothing there is connected to the real database. Registration is intended only for this loopback local-development workspace; this is not a hardened production/LAN release.
+**Still to build:** invitations or closed registration policy, direct messages, topic archiving/unread state, agent connectors, approval governance backed by the server, password recovery, and deployment on Nora. Direct messages and governance remain marked as coming next. `/demo` still offers broader sample flows for design iteration; nothing there is connected to the real database. Registration is intended only for this loopback local-development workspace; this is not a hardened production/LAN release.
 
 ## Local data and secrets
 
@@ -63,7 +65,7 @@ On a fresh Windows checkout: install Node and Docker Desktop, run `npm ci`, then
 
 - `backend/Nexus.slnx`: Api, Application, Domain, Infrastructure and Tests
 - `backend/README.md`: API contract, session rules, migrations and limitations
-- `src/LiveWorkspace.tsx`, `src/live-api.ts`: real UI and cookie/CSRF API client
+- `src/LiveWorkspace.tsx`, `src/PersistentWorkspace.tsx`, `src/live-api.ts`: real authentication, conversation UI and API client
 - `src/App.tsx`, `src/domain.ts`: retained sample prototype
 - `compose.yaml`: digest-pinned PostgreSQL image with project-local data
 - `docs/`: original design PDFs and extracted specifications

@@ -13,7 +13,7 @@ public sealed class TestWorkspace : IAsyncDisposable
     public ApiHost Host { get; private set; } = null!;
     public HttpClient Client { get; private set; } = null!;
     public static readonly object Credentials = new { email = "admin@example.test", displayName = "Test Admin", password = "Test-only-long-passphrase!7" };
-    public static async Task<TestWorkspace> Create()
+    public static async Task<TestWorkspace> Create(bool startHost = true)
     {
         var workspace = new TestWorkspace();
         using var config = JsonDocument.Parse(await File.ReadAllTextAsync("C:/Nexus/.local/runtime.json"));
@@ -23,9 +23,13 @@ public sealed class TestWorkspace : IAsyncDisposable
         await using var command = new NpgsqlCommand($"CREATE DATABASE {workspace.Name}", conn);
         await command.ExecuteNonQueryAsync();
         workspace.Connection = new NpgsqlConnectionStringBuilder(workspace.admin) { Database = workspace.Name }.ConnectionString;
-        workspace.Host = workspace.NewHost();
-        workspace.Client = workspace.Host.CreateClient();
+        if (startHost) workspace.Start();
         return workspace;
+    }
+    public void Start()
+    {
+        Host = NewHost();
+        Client = Host.CreateClient();
     }
     public ApiHost NewHost(DbCommandInterceptor? interceptor = null) => new(Connection, $"C:/Nexus/backend/.test-keys/{Name}", interceptor: interceptor);
     public static async Task Csrf(HttpClient client)
@@ -44,8 +48,8 @@ public sealed class TestWorkspace : IAsyncDisposable
     }
     public async ValueTask DisposeAsync()
     {
-        Client.Dispose();
-        await Host.DisposeAsync();
+        Client?.Dispose();
+        if (Host is not null) await Host.DisposeAsync();
         NpgsqlConnection.ClearAllPools();
         await using var conn = new NpgsqlConnection(admin);
         await conn.OpenAsync();

@@ -93,6 +93,7 @@ public class SecurityBoundaryTests
     [InlineData("/api/auth/login")]
     [InlineData("/api/auth/logout")]
     [InlineData("/api/conversations/main/messages")]
+    [InlineData("/api/conversations/topical")]
     public async Task Unsafe_endpoints_require_csrf(string path)
     {
         await using var w = await TestWorkspace.Create();

@@ -65,25 +65,49 @@ namespace Nexus.Infrastructure.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByParticipantId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
 
                     b.Property<string>("Kind")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("State")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
 
                     b.HasKey("Id");
 
-                    b.ToTable("Conversations");
+                    b.HasIndex("CreatedByParticipantId", "ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL");
+
+                    b.ToTable("Conversations", t =>
+                        {
+                            t.HasCheckConstraint("CK_Conversations_Kind", "\"Kind\" IN ('main', 'topical')");
+
+                            t.HasCheckConstraint("CK_Conversations_State", "\"State\" = 'active'");
+
+                            t.HasCheckConstraint("CK_Conversations_TopicalCreator", "(\"Kind\" = 'main' AND \"CreatedByParticipantId\" IS NULL AND \"ClientRequestId\" IS NULL) OR (\"Kind\" = 'topical' AND \"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Nexus.Domain.Membership", b =>
@@ -127,14 +151,15 @@ namespace Nexus.Infrastructure.Migrations
 
                     b.Property<string>("State")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ConversationId");
-
                     b.HasIndex("AuthorId", "ClientRequestId")
                         .IsUnique();
+
+                    b.HasIndex("ConversationId", "CreatedAt", "Id");
 
                     b.ToTable("Messages");
                 });
@@ -199,6 +224,14 @@ namespace Nexus.Infrastructure.Migrations
                         .HasForeignKey("Nexus.Domain.Account", "ParticipantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Nexus.Domain.Conversation", b =>
+                {
+                    b.HasOne("Nexus.Domain.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByParticipantId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Nexus.Domain.Membership", b =>

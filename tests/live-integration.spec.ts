@@ -19,6 +19,11 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
  const newcomerPassword = 'fixture-only-second-password-2026';
  const newcomerName = 'Second Human';
  const newcomerBody = `Second human message ${crypto.randomUUID()}`;
+ const topicTitle = `Project room ${crypto.randomUUID().slice(0,8)}`;
+ const topicDescription = 'A focused public conversation for Sprint 4.';
+ const topicOpening = `Opening topic message ${crypto.randomUUID()}`;
+ const topicDraft = `Draft preserved across rooms ${crypto.randomUUID()}`;
+ const newcomerTopicBody = `Second human topic reply ${crypto.randomUUID()}`;
  await page.goto('/');
  await expect(page.getByRole('heading', {name:'Bring your workspace to life'})).toBeVisible();
  await page.screenshot({path:'artifacts/live-setup.png',fullPage:true});
@@ -40,6 +45,27 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:'artifacts/live-room-mobile.png',fullPage:true});
  await page.setViewportSize({width:1440,height:960});
+ await page.getByRole('button', {name:'Topics'}).click();
+ await page.getByRole('button', {name:'New topic'}).click();
+ await page.getByLabel('Topic title').fill(topicTitle);
+ await page.getByLabel('Description').fill(topicDescription);
+ await page.getByLabel('Opening message').fill(topicOpening);
+ await page.getByRole('button', {name:'Create topic'}).click();
+ await expect(page.getByRole('heading', {name:topicTitle})).toBeVisible();
+ await expect(page.getByText(topicOpening, {exact:true})).toBeVisible();
+ const topicComposer = page.getByLabel(`Message ${topicTitle}`);
+ await topicComposer.fill(topicDraft);
+ await page.getByRole('button', {name:'Common room'}).click();
+ const preservedMainDraft = `Main draft ${crypto.randomUUID()}`;
+ await page.getByLabel('Message the Common Room').fill(preservedMainDraft);
+ await page.getByRole('button', {name:topicTitle}).click();
+ await expect(topicComposer).toHaveValue(topicDraft);
+ await topicComposer.press('Enter');
+ await expect(topicComposer).toHaveValue('');
+ await expect(page.getByText(topicDraft, {exact:true})).toBeVisible();
+ await page.getByRole('button', {name:'Common room'}).click();
+ await expect(page.getByLabel('Message the Common Room')).toHaveValue(preservedMainDraft);
+ await page.getByLabel('Message the Common Room').fill('');
  const newcomerContext = await browser.newContext({baseURL});
  try {
   const newcomer = await newcomerContext.newPage();
@@ -53,11 +79,23 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
   await expect(newcomer.getByRole('heading', {name:'The Common Room'})).toBeVisible();
   await expect(newcomer.getByText(`${newcomerName} (you)`, {exact:true})).toBeVisible();
   await expect(newcomer.getByRole('log', {name:'Common Room messages'}).getByText(body, {exact:true})).toBeVisible();
-  await expect(page.getByText(newcomerName, {exact:true})).toBeVisible({timeout:7000});
+  await newcomer.getByRole('button', {name:'Topics'}).click();
+  await newcomer.getByRole('button', {name:topicTitle}).click();
+  await expect(newcomer.getByText(topicOpening, {exact:true})).toBeVisible();
+  await expect(newcomer.getByText(topicDraft, {exact:true})).toBeVisible();
+  await page.getByRole('button', {name:topicTitle}).click();
+  await newcomer.getByLabel(`Message ${topicTitle}`).fill(newcomerTopicBody);
+  await newcomer.getByLabel(`Message ${topicTitle}`).press('Enter');
+  await expect(newcomer.getByLabel(`Message ${topicTitle}`)).toHaveValue('');
+  await expect(newcomer.getByText(newcomerTopicBody, {exact:true})).toBeVisible();
+  await expect(page.getByText(newcomerTopicBody, {exact:true})).toBeVisible({timeout:7000});
+  await newcomer.getByRole('button', {name:'Common room'}).click();
+  await expect(page.getByRole('complementary', {name:'Workspace context'}).getByText(newcomerName, {exact:true})).toBeVisible({timeout:7000});
   await newcomer.getByLabel('Message the Common Room').fill(newcomerBody);
   await newcomer.getByRole('button', {name:'Send', exact:true}).click();
   await expect(newcomer.getByLabel('Message the Common Room')).toHaveValue('');
   await expect(newcomer.getByRole('log', {name:'Common Room messages'}).getByText(newcomerBody, {exact:true})).toBeVisible();
+  await page.getByRole('button', {name:'Common room'}).click();
   await expect(page.getByRole('log', {name:'Common Room messages'}).getByText(newcomerBody, {exact:true})).toBeVisible({timeout:7000});
   await newcomer.getByRole('button', {name:'Sign out'}).click();
   await newcomer.getByLabel('Email').fill(newcomerEmail);
@@ -65,6 +103,11 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
   await newcomer.getByRole('button', {name:'Sign in', exact:true}).click();
   await expect(newcomer.getByRole('log', {name:'Common Room messages'}).getByText(body, {exact:true})).toBeVisible();
   await expect(newcomer.getByRole('log', {name:'Common Room messages'}).getByText(newcomerBody, {exact:true})).toBeVisible();
+  await newcomer.getByRole('button', {name:'Topics'}).click();
+  await newcomer.getByRole('button', {name:topicTitle}).click();
+  await expect(newcomer.getByText(topicOpening, {exact:true})).toBeVisible();
+  await expect(newcomer.getByText(topicDraft, {exact:true})).toBeVisible();
+  await expect(newcomer.getByText(newcomerTopicBody, {exact:true})).toBeVisible();
  } finally { await newcomerContext.close(); }
  await page.getByRole('button', {name:'Sign out'}).click();
  await expect(page.getByRole('heading', {name:'Welcome back'})).toBeVisible();
@@ -87,6 +130,11 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
   await expect(login.getByRole('log', {name:'Common Room messages'}).getByText(second, {exact:true})).toBeVisible();
   await login.reload();
   await expect(login.getByRole('log', {name:'Common Room messages'}).getByText(second, {exact:true})).toBeVisible();
+  await login.getByRole('button', {name:'Topics'}).click();
+  await login.getByRole('button', {name:topicTitle}).click();
+  await expect(login.getByText(topicOpening, {exact:true})).toBeVisible();
+  await expect(login.getByText(topicDraft, {exact:true})).toBeVisible();
+  await expect(login.getByText(newcomerTopicBody, {exact:true})).toBeVisible();
   await login.getByRole('button', {name:'Sign out'}).click();
   await expect(login.getByRole('heading', {name:'Welcome back'})).toBeVisible();
  } finally { await independent.close(); }

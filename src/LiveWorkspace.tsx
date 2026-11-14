@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Home, Hash, LogOut, MessagesSquare, ShieldCheck, UserRound } from 'lucide-react';
 import { ApiError, WorkspaceApi } from './live-api';
+import PersistentWorkspace from './PersistentWorkspace';
 import './live.css';
 
 type User = {id:string; email:string; displayName:string; participantId:string; isAdmin:boolean};
@@ -40,8 +41,8 @@ export default function LiveWorkspace() {
   void load();
   return () => controller.abort();
  },[api,attempt]);
- const expired = useCallback(() => {setApi(new WorkspaceApi());setScreen({kind:'auth',bootstrap:false,notice:'Your session ended. Sign in again.'});},[]);
- if(screen.kind === 'room') return <MainRoom api={api} user={screen.user} initialRoom={screen.room} onExpired={expired} onLogout={() => {setApi(new WorkspaceApi());setScreen({kind:'loading'});}}/>;
+ const expired = useCallback(() => {api.resetSession();setScreen({kind:'auth',bootstrap:false,notice:'Your session ended. Sign in again.'});},[api]);
+ if(screen.kind === 'room') return <PersistentWorkspace api={api} user={screen.user} initialRoom={screen.room} onExpired={expired} onLogout={() => {setApi(new WorkspaceApi());setScreen({kind:'loading'});}}/>;
  return <div className="live-gate"><aside><Brand/><div className="live-intro"><p className="eyebrow">A PLACE TO THINK TOGETHER</p><h2>Conversation first.<br/>People at the center.</h2><p>Your local workspace begins with a shared common room.</p></div><a href="/demo">Explore the sample prototype ↗</a></aside><main className="live-auth-panel">
  {screen.kind === 'loading' && <p role="status">Connecting to your local workspace…</p>}
  {screen.kind === 'error' && <section><h1>Workspace unavailable</h1><p role="alert">{screen.message}</p><button className="button primary" onClick={() => setAttempt(a=>a+1)}>Retry connection</button><p>No sample data has been loaded.</p></section>}

@@ -245,6 +245,256 @@ test('composer caps input at the backend limit of 5000 characters', async ({page
  await composer.fill('a'.repeat(5001));
  await expect(composer).toHaveValue('a'.repeat(5000));
 });
+test('topics disclosure and selected conversation expose accessible state', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ const topic={id:'topic/accessible',title:'Accessible topic',kind:'topical',state:'active',participantIds:[person.id],description:'Clear state',createdAt:'2026-01-02T00:00:00Z'};
+ await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
+  if(path.endsWith('/conversations/topic%2Faccessible/messages'))return route.fulfill({json:[]});
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ const toggle=page.getByRole('button',{name:'Topics'});
+ await expect(toggle).toHaveAttribute('aria-expanded','false');
+ await expect(toggle).not.toHaveAttribute('aria-controls','topic-list');
+ await toggle.click();
+ await expect(toggle).toHaveAttribute('aria-expanded','true');
+ await expect(toggle).toHaveAttribute('aria-controls','topic-list');
+ await expect(page.locator('#topic-list')).toBeVisible();
+ const topicButton=page.getByRole('button',{name:topic.title});
+ await topicButton.click();
+ await expect(topicButton).toHaveAttribute('aria-current','page');
+ await expect(page.getByRole('button',{name:'Common room'})).not.toHaveAttribute('aria-current','page');
+});
+test('topics open as a usable narrow-screen panel without horizontal overflow', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ const topic={id:'topic/mobile',title:'Readable mobile topic',kind:'topical',state:'active',participantIds:[person.id],description:'Fits narrow screens',createdAt:'2026-01-02T00:00:00Z'};
+ await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.setViewportSize({width:375,height:812});await page.goto('/');
+ await page.getByRole('button',{name:'Topics'}).click();
+ const panel=page.locator('#topic-list');const newTopic=page.getByRole('button',{name:'New topic'});const topicButton=page.getByRole('button',{name:topic.title});
+ await expect(panel).toBeVisible();await expect(topicButton.getByText(topic.title,{exact:true})).toBeVisible();
+ for(const target of [newTopic,topicButton]){
+  const box=await target.boundingBox();expect(box?.width).toBeGreaterThanOrEqual(44);expect(box?.height).toBeGreaterThanOrEqual(44);
+ }
+ expect((await topicButton.getByText(topic.title,{exact:true}).boundingBox())?.width).toBeGreaterThan(80);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+});
+test('topic creation reports whitespace-only required fields with associated accessible errors', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ let creationPosts=0;
+ await page.route('**/api/**',route=>{
+  const request=route.request();const path=new URL(request.url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main],messages:[]}});
+  if(path.endsWith('/conversations/topical')&&request.method()==='POST'){creationPosts++;return route.fulfill({status:500,json:{title:'Should not submit'}});}
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'Topics'}).click();await page.getByRole('button',{name:'New topic'}).click();
+ const title=page.getByLabel('Topic title');const opening=page.getByLabel('Opening message');
+ await title.fill('   ');await opening.fill('\n\t ');await page.getByRole('button',{name:'Create topic'}).click();
+ await expect(page.getByText('Enter a topic title.')).toBeVisible();await expect(page.getByText('Enter an opening message.')).toBeVisible();
+ await expect(title).toHaveAttribute('aria-invalid','true');await expect(opening).toHaveAttribute('aria-invalid','true');
+ await expect(title).toHaveAttribute('aria-describedby','topic-title-error');await expect(opening).toHaveAttribute('aria-describedby','topic-opening-error');
+ expect(creationPosts).toBe(0);
+ await title.fill('A valid title');
+ await expect(title).not.toHaveAttribute('aria-invalid','true');await expect(page.getByText('Enter a topic title.')).toHaveCount(0);
+ await expect(opening).toHaveAttribute('aria-invalid','true');
+});
+test('new topic dialog is labelled, modal, focus trapped, inerting the background, and restores its trigger', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main],messages:[]}});
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'Topics'}).click();
+ const trigger=page.getByRole('button',{name:'New topic'});await trigger.focus();await trigger.click();
+ const dialog=page.getByRole('dialog',{name:'New topic'});const title=page.getByLabel('Topic title');const close=page.getByRole('button',{name:'Close new topic'});const create=page.getByRole('button',{name:'Create topic'});
+ await expect(dialog).toHaveAttribute('aria-modal','true');await expect(dialog).toHaveAttribute('aria-labelledby','new-topic-title');
+ await expect(title).toBeFocused();await expect(page.locator('.workspace-surface')).toHaveAttribute('inert','');
+ await close.focus();await close.press('Shift+Tab');await expect(create).toBeFocused();await create.press('Tab');await expect(close).toBeFocused();
+ await title.press('Escape');await expect(dialog).toHaveCount(0);await expect(trigger).toBeFocused();await expect(page.locator('.workspace-surface')).not.toHaveAttribute('inert','');
+});
+test('new topic dialog ignores Escape while creation is pending', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ let postStarted!:()=>void;const started=new Promise<void>(resolve=>{postStarted=resolve;});
+ await page.route('**/api/**',async route=>{const request=route.request();const path=new URL(request.url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'pending-topic-token'}});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main],messages:[]}});
+  if(path.endsWith('/conversations/topical')&&request.method()==='POST'){postStarted();await new Promise(()=>{});return;}
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'Topics'}).click();await page.getByRole('button',{name:'New topic'}).click();
+ await page.getByLabel('Topic title').fill('Pending topic');await page.getByLabel('Opening message').fill('Still creating');
+ await page.getByRole('button',{name:'Create topic'}).click();await started;await page.keyboard.press('Escape');
+ await expect(page.getByRole('dialog',{name:'New topic'})).toBeVisible();await expect(page.getByRole('button',{name:'Creating…'})).toBeDisabled();
+});
+test('topics validate, retry one creation identity, select the opening message, and keep drafts per conversation', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ const existing={id:'topic/existing',title:'Existing topic',kind:'topical',state:'active',participantIds:[person.id],description:'A public topic',createdAt:'2026-01-02T00:00:00Z'};
+ const created={id:'topic/new one',title:'Safe <b>topic</b>',kind:'topical',state:'active',participantIds:[person.id],description:'Literal <img src=x onerror=alert(1)>',createdAt:'2026-01-03T00:00:00Z'};
+ const histories:Record<string,unknown[]>={main:[],[existing.id]:[],[created.id]:[]};
+ const creationIds:string[]=[];const messageDestinations:string[]=[];let failCreate=true;
+ await page.route('**/api/**',async route=>{
+  const request=route.request();const path=new URL(request.url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'topic-token'}});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,existing,...(creationIds.length>1?[created]:[])],messages:histories.main}});
+  if(path.endsWith('/conversations/topical')&&request.method()==='POST'){
+   const body=request.postDataJSON();creationIds.push(body.clientRequestId);
+   expect(body).toMatchObject({title:created.title,description:created.description,openingMessage:'Opening <script>alert(1)</script>'});
+   if(failCreate){failCreate=false;return route.fulfill({status:503,json:{title:'Unavailable'}});}
+   const opening={id:'opening',conversationId:created.id,authorId:person.id,body:body.openingMessage,state:'delivered',createdAt:'2026-01-03T00:00:01Z'};
+   histories[created.id]=[opening];return route.fulfill({json:{conversation:created,openingMessage:opening}});
+  }
+  const match=path.match(/\/conversations\/(.+)\/messages$/);
+  if(match){const id=decodeURIComponent(match[1]);
+   if(request.method()==='GET')return route.fulfill({json:histories[id]??[]});
+   const body=request.postDataJSON();messageDestinations.push(id);
+   const message={id:`sent-${messageDestinations.length}`,conversationId:id,authorId:person.id,body:body.body,state:'delivered',createdAt:new Date().toISOString()};
+   histories[id]=[...(histories[id]??[]),message];return route.fulfill({json:message});
+  }
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ await page.getByRole('button',{name:'Topics'}).click();
+ await expect(page.getByRole('button',{name:'Existing topic'})).toBeVisible();
+ await page.getByRole('button',{name:'New topic'}).click();
+ const title=page.getByLabel('Topic title');const description=page.getByLabel('Description');const opening=page.getByLabel('Opening message');
+ await expect(title).toHaveAttribute('required','');await expect(title).toHaveAttribute('maxlength','80');
+ await expect(description).toHaveAttribute('maxlength','160');await expect(opening).toHaveAttribute('required','');await expect(opening).toHaveAttribute('maxlength','5000');
+ await page.getByRole('button',{name:'Create topic'}).click();
+ expect(creationIds).toHaveLength(0);
+ await title.fill(created.title);await description.fill(created.description);await opening.fill('Opening <script>alert(1)</script>');
+ await page.getByRole('button',{name:'Create topic'}).click();
+ await expect(page.getByRole('alert')).toContainText('retry');
+ await expect(title).toHaveValue(created.title);await expect(description).toHaveValue(created.description);await expect(opening).toHaveValue('Opening <script>alert(1)</script>');
+ await page.getByRole('button',{name:'Retry create topic'}).click();
+ expect(creationIds).toHaveLength(2);expect(creationIds[0]).toBe(creationIds[1]);
+ await expect(page.getByRole('heading',{name:created.title})).toBeVisible();
+ await expect(page.getByText('Opening <script>alert(1)</script>',{exact:true})).toBeVisible();
+ await expect(page.locator('.conversation-heading b,.conversation-heading img,.message-content script')).toHaveCount(0);
+ const topicComposer=page.getByLabel(`Message ${created.title}`);
+ await expect(topicComposer).toBeFocused();
+ expect(await page.evaluate(()=>document.activeElement?.tagName)).not.toBe('BODY');
+ await topicComposer.fill('Topic draft');
+ await page.getByRole('button',{name:'Common room'}).click();
+ const mainComposer=page.getByLabel('Message the Common Room');await mainComposer.fill('Main draft');
+ await page.getByRole('button',{name:created.title}).click();await expect(topicComposer).toHaveValue('Topic draft');
+ await topicComposer.fill('Sent to topic');await topicComposer.press('Enter');await expect(page.getByText('Sent to topic',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Common room'}).click();await expect(mainComposer).toHaveValue('Main draft');
+ await mainComposer.press('Enter');await expect(page.getByText('Main draft',{exact:true})).toBeVisible();
+ expect(messageDestinations).toEqual([created.id,'main']);
+});
+test('message retry identities and failures remain isolated by destination', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ const topic={id:'topic/retries',title:'Retry topic',kind:'topical',state:'active',participantIds:[person.id],description:'Retry separately',createdAt:'2026-01-02T00:00:00Z'};
+ const ids:Record<string,string[]>={main:[],[topic.id]:[]};
+ await page.route('**/api/**',async route=>{
+  const request=route.request();const path=new URL(request.url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'retry-token'}});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
+  const match=path.match(/\/conversations\/(.+)\/messages$/);
+  if(match){const destination=decodeURIComponent(match[1]);if(request.method()==='GET')return route.fulfill({json:[]});
+   const body=request.postDataJSON();ids[destination].push(body.clientRequestId);
+   if(ids[destination].length===1)return route.abort('failed');
+   return route.fulfill({json:{id:`${destination}-sent`,conversationId:destination,authorId:person.id,body:body.body,state:'delivered',createdAt:new Date().toISOString()}});
+  }
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'Topics'}).click();await page.getByRole('button',{name:topic.title}).click();
+ const topicComposer=page.getByLabel(`Message ${topic.title}`);await topicComposer.fill('Retry topic body');await topicComposer.press('Enter');
+ await expect(page.getByRole('alert')).toContainText('not confirmed');
+ await page.getByRole('button',{name:'Common room'}).click();const mainComposer=page.getByLabel('Message the Common Room');await mainComposer.fill('Retry main body');await mainComposer.press('Enter');
+ await expect(page.getByRole('alert')).toContainText('not confirmed');
+ await page.getByRole('button',{name:topic.title}).click();
+ await expect(page.getByRole('alert')).toContainText('not confirmed');await page.getByRole('button',{name:'Retry send'}).click();
+ await page.getByRole('button',{name:'Common room'}).click();await expect(page.getByRole('alert')).toContainText('not confirmed');await page.getByRole('button',{name:'Retry send'}).click();
+ expect(ids[topic.id]).toHaveLength(2);expect(ids[topic.id][0]).toBe(ids[topic.id][1]);
+ expect(ids.main).toHaveLength(2);expect(ids.main[0]).toBe(ids.main[1]);expect(ids.main[0]).not.toBe(ids[topic.id][0]);
+});
+test('overlapping sends keep each conversation pending and preserve an edited draft', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ const topic={id:'topic/overlap',title:'Overlap topic',kind:'topical',state:'active',participantIds:[person.id],description:'Concurrent sends',createdAt:'2026-01-02T00:00:00Z'};
+ let releaseMain!:()=>void;let releaseTopic!:()=>void;let mainStarted!:()=>void;let topicStarted!:()=>void;let mainFinished!:()=>void;
+ const mainGate=new Promise<void>(resolve=>{releaseMain=resolve;});const topicGate=new Promise<void>(resolve=>{releaseTopic=resolve;});
+ const mainRequest=new Promise<void>(resolve=>{mainStarted=resolve;});const topicRequest=new Promise<void>(resolve=>{topicStarted=resolve;});const mainResponse=new Promise<void>(resolve=>{mainFinished=resolve;});
+ await page.route('**/api/**',async route=>{
+  const request=route.request();const path=new URL(request.url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'overlap-token'}});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
+  const match=path.match(/\/conversations\/(.+)\/messages$/);
+  if(match){const destination=decodeURIComponent(match[1]);if(request.method()==='GET')return route.fulfill({json:[]});
+   const body=request.postDataJSON();
+   if(destination==='main'){mainStarted();await mainGate;}else{topicStarted();await topicGate;}
+   await route.fulfill({json:{id:`${destination}-sent`,conversationId:destination,authorId:person.id,body:body.body,state:'delivered',createdAt:new Date().toISOString()}});
+   if(destination==='main')mainFinished();return;
+  }
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');
+ const mainComposer=page.getByLabel('Message the Common Room');await mainComposer.fill('Main in flight');await mainComposer.press('Enter');await mainRequest;
+ await page.getByRole('button',{name:'Topics'}).click();await page.getByRole('button',{name:topic.title}).click();
+ const topicComposer=page.getByLabel(`Message ${topic.title}`);await topicComposer.fill('Topic in flight');await topicComposer.press('Enter');await topicRequest;
+ releaseMain();await mainResponse;
+ await expect(topicComposer).toBeDisabled();await expect(page.getByRole('button',{name:'Sending…'})).toBeDisabled();
+ await topicComposer.evaluate(node=>{const input=node as HTMLTextAreaElement;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')?.set;setter?.call(input,'Edited after submit');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ await expect(topicComposer).toHaveValue('Edited after submit');
+ releaseTopic();await expect(page.getByText('Topic in flight',{exact:true})).toBeVisible();
+ await expect(topicComposer).toHaveValue('Edited after submit');await expect(topicComposer).toBeEnabled();
+});
+test('a stale topic history response cannot erase a local send', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
+ const topic={id:'topic/stale path',title:'Stale response topic',kind:'topical',state:'active',participantIds:[person.id],description:'History races',createdAt:'2026-01-02T00:00:00Z'};
+ let releaseHistory!:()=>void;let markStarted!:()=>void;let completed=false;
+ const historyGate=new Promise<void>(resolve=>{releaseHistory=resolve;});const historyStarted=new Promise<void>(resolve=>{markStarted=resolve;});
+ await page.route('**/api/**',async route=>{
+  const request=route.request();const path=new URL(request.url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/csrf'))return route.fulfill({json:{token:'stale-token'}});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
+  if(path===`/api/conversations/${encodeURIComponent(topic.id)}/messages`&&request.method()==='GET'){markStarted();await historyGate;await route.fulfill({json:[]});completed=true;return;}
+  if(path===`/api/conversations/${encodeURIComponent(topic.id)}/messages`&&request.method()==='POST'){
+   const body=request.postDataJSON();return route.fulfill({json:{id:'local-topic-message',conversationId:topic.id,authorId:person.id,body:body.body,state:'delivered',createdAt:new Date().toISOString()}});
+  }
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'Topics'}).click();await page.getByRole('button',{name:topic.title}).click();await historyStarted;
+ const composer=page.getByLabel(`Message ${topic.title}`);await composer.fill('Keep this topic message');await composer.press('Enter');
+ await expect(page.getByText('Keep this topic message',{exact:true})).toBeVisible();releaseHistory();await expect.poll(()=>completed).toBe(true);
+ await expect(page.getByText('Keep this topic message',{exact:true})).toBeVisible();
+});
+test('session expiry while loading a selected topic returns to sign in', async ({page}) => {
+ const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared'};
+ const topic={id:'expired-topic',title:'Expiring topic',kind:'topical',state:'active',participantIds:[person.id],description:'Session check'};
+ await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
+  if(path.endsWith('/conversations/expired-topic/messages'))return route.fulfill({status:401,json:{title:'Session expired'}});
+  return route.fulfill({status:404,json:{title:'Not implemented'}});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'Topics'}).click();await page.getByRole('button',{name:topic.title}).click();
+ await expect(page.getByRole('heading',{name:'Welcome back'})).toBeVisible();await expect(page.getByText('Your session ended. Sign in again.')).toBeVisible();
+});
 for (const mode of ['bootstrap','login','register'] as const) {
  test(`${mode} recovers from post-auth CSRF failure without repeating authentication`, async ({page}) => {
   let signedIn=false;let authPosts=0;let tokens=0;let sessionReads=0;

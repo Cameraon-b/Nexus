@@ -16,6 +16,7 @@ async function decode<T>(response: Response): Promise<T> {
 }
 export class WorkspaceApi {
  private token: string | undefined;
+ resetSession() { this.token = undefined; }
  async get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api${path}`, {credentials:'same-origin', signal});
   return decode<T>(response);

@@ -77,12 +77,25 @@ app.MapPost("/api/auth/logout", async (IIdentityStore store, HttpContext context
     return Results.NoContent();
 });
 app.MapGet("/api/auth/me", async (IIdentityStore store, HttpContext context) => await store.Resolve(context.Request.Cookies["nexus.session"]) is { } user ? Results.Ok(user) : Results.Unauthorized());
-app.MapGet("/api/workspace/home", async (IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) => await identity.Resolve(context.Request.Cookies["nexus.session"]) is not null ? Results.Ok(await workspace.Home()) : Results.Unauthorized());
-app.MapGet("/api/conversations/main/messages", async (IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) => await identity.Resolve(context.Request.Cookies["nexus.session"]) is not null ? Results.Ok(await workspace.Messages()) : Results.Unauthorized());
-app.MapPost("/api/conversations/main/messages", async (PostMessageRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+app.MapGet("/api/workspace/home", async (IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
 {
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
-    return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Post(user.ParticipantId, request));
+    return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Home(user.ParticipantId));
+});
+app.MapPost("/api/conversations/topical", async (CreateTopicalConversationRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    return user is null ? Results.Unauthorized() : Results.Ok(await workspace.CreateTopical(user.ParticipantId, request));
+});
+app.MapGet("/api/conversations/{conversationId}/messages", async (string conversationId, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Messages(conversationId, user.ParticipantId));
+});
+app.MapPost("/api/conversations/{conversationId}/messages", async (string conversationId, PostMessageRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Post(conversationId, user.ParticipantId, request));
 });
 
 app.Run();
