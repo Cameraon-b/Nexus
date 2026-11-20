@@ -20,6 +20,25 @@ public sealed class Conversation
     public Guid? CreatedByParticipantId { get; private set; }
     public Guid? ClientRequestId { get; private set; }
 
+    public Guid? DirectParticipantLowId { get; private set; }
+    public Guid? DirectParticipantHighId { get; private set; }
+
+    public static Conversation CreateDirect(Guid first, Guid second)
+    {
+        if (first == Guid.Empty || second == Guid.Empty || first == second)
+            throw new RuleViolation(400, "Two distinct nonempty participant UUIDs are required.");
+        var firstIsLow = string.CompareOrdinal(first.ToString("N"), second.ToString("N")) < 0;
+        return new Conversation
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Kind = "direct",
+            Title = "Direct conversation",
+            Description = "",
+            DirectParticipantLowId = firstIsLow ? first : second,
+            DirectParticipantHighId = firstIsLow ? second : first
+        };
+    }
+
     private Conversation() { }
 
     public static Conversation CreateMain() => new();

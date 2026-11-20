@@ -23,6 +23,9 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
  const topicDescription = 'A focused public conversation for Sprint 4.';
  const topicOpening = `Opening topic message ${crypto.randomUUID()}`;
  const topicDraft = `Draft preserved across rooms ${crypto.randomUUID()}`;
+ let directId='';
+ const privateBody=`Private A to B ${crypto.randomUUID()}`;
+ const privateReply=`Private B reply ${crypto.randomUUID()}`;
  const newcomerTopicBody = `Second human topic reply ${crypto.randomUUID()}`;
  await page.goto('/');
  await expect(page.getByRole('heading', {name:'Bring your workspace to life'})).toBeVisible();
@@ -97,6 +100,46 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
   await expect(newcomer.getByRole('log', {name:'Common Room messages'}).getByText(newcomerBody, {exact:true})).toBeVisible();
   await page.getByRole('button', {name:'Common room'}).click();
   await expect(page.getByRole('log', {name:'Common Room messages'}).getByText(newcomerBody, {exact:true})).toBeVisible({timeout:7000});
+  // A creates the DM while B remains on Main; discovery must not steal selection.
+  await page.getByRole('button',{name:'Direct messages',exact:true}).click();
+  await page.getByRole('button',{name:'New message',exact:true}).click();
+  await page.getByLabel('Recipient').selectOption({label:newcomerName});
+  const createdDirect=page.waitForResponse(r=>r.url().endsWith('/api/conversations/direct')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Open conversation',exact:true}).click();
+  const directResponse=await createdDirect;expect(directResponse.status()).toBe(200);directId=(await directResponse.json()).id;
+  await expect(page.getByLabel(`Message ${newcomerName}`)).toBeFocused();
+  await page.getByLabel(`Message ${newcomerName}`).fill(privateBody);await page.getByLabel(`Message ${newcomerName}`).press('Enter');
+  await expect(page.getByLabel(`Message ${newcomerName}`)).toHaveValue('');
+  await expect(page.getByRole('log').getByText(privateBody,{exact:true})).toBeVisible();
+  await newcomer.getByRole('button',{name:'Direct messages',exact:true}).click();
+  await expect(newcomer.getByRole('button',{name:displayName,exact:true})).toBeVisible({timeout:8000});
+  await expect(newcomer.getByLabel('Message the Common Room')).toBeVisible();
+  await newcomer.getByRole('button',{name:displayName,exact:true}).click();
+  await expect(newcomer.getByRole('log').getByText(privateBody,{exact:true})).toBeVisible();
+  await newcomer.getByLabel(`Message ${displayName}`).fill(privateReply);await newcomer.getByLabel(`Message ${displayName}`).press('Enter');
+  await expect(newcomer.getByLabel(`Message ${displayName}`)).toHaveValue('');
+  await expect(page.getByRole('log').getByText(privateReply,{exact:true})).toBeVisible({timeout:8000});
+  for(const [client,other] of [[page,newcomerName],[newcomer,displayName]] as const){
+   await client.getByLabel(`Message ${other}`).fill('DM isolated draft');
+   await client.getByRole('button',{name:'Common room',exact:true}).click();await client.getByLabel('Message the Common Room').fill('Main isolated draft');
+   await client.getByRole('button',{name:'Topics',exact:true}).click();await client.getByRole('button',{name:topicTitle,exact:true}).click();await client.getByLabel(`Message ${topicTitle}`).fill('Topic isolated draft');
+   await client.getByRole('button',{name:'Direct messages',exact:true}).click();await client.getByRole('button',{name:other,exact:true}).click();await expect(client.getByLabel(`Message ${other}`)).toHaveValue('DM isolated draft');
+   await client.getByRole('button',{name:'Topics',exact:true}).click();await client.getByRole('button',{name:topicTitle,exact:true}).click();await expect(client.getByLabel(`Message ${topicTitle}`)).toHaveValue('Topic isolated draft');
+   await client.getByRole('button',{name:'Common room',exact:true}).click();await expect(client.getByLabel('Message the Common Room')).toHaveValue('Main isolated draft');
+  }
+  const thirdContext=await browser.newContext({baseURL});
+  try{
+   const third=await thirdContext.newPage();await third.goto('/');await third.getByRole('tab',{name:'Create account'}).click();
+   await third.getByLabel('Display name').fill('Third Human');await third.getByLabel('Email').fill('third@example.test');await third.getByLabel('Password',{exact:true}).fill('fixture-only-third-password-2026');await third.getByRole('button',{name:'Create account',exact:true}).click();
+   await expect(third.getByLabel('Message the Common Room')).toBeVisible();await third.getByRole('button',{name:'Direct messages',exact:true}).click();
+   await expect(third.locator('#direct-list button')).toHaveCount(1);
+   const home=await thirdContext.request.get('/api/workspace/home');expect((await home.json()).conversations.some((c:{id:string})=>c.id===directId)).toBe(false);
+   const csrf=await thirdContext.request.get('/api/auth/csrf');const token=(await csrf.json()).token;
+   for(const response of [await thirdContext.request.get(`/api/conversations/${directId}/messages`),await thirdContext.request.post(`/api/conversations/${directId}/messages`,{headers:{'X-CSRF-TOKEN':token},data:{body:'Forbidden',clientRequestId:crypto.randomUUID()}})]){
+    expect(response.status()).toBe(403);const text=await response.text();expect(text).not.toContain(privateBody);expect(text).not.toContain(privateReply);
+   }
+   for(const context of [page.context(),newcomerContext]){const response=await context.request.get(`/api/conversations/${directId}/messages`);expect(response.status()).toBe(200);expect(await response.text()).toContain(privateBody);}
+  }finally{await thirdContext.close();}
   await newcomer.getByRole('button', {name:'Sign out'}).click();
   await newcomer.getByLabel('Email').fill(newcomerEmail);
   await newcomer.getByLabel('Password', {exact:true}).fill(newcomerPassword);
@@ -108,6 +151,8 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
   await expect(newcomer.getByText(topicOpening, {exact:true})).toBeVisible();
   await expect(newcomer.getByText(topicDraft, {exact:true})).toBeVisible();
   await expect(newcomer.getByText(newcomerTopicBody, {exact:true})).toBeVisible();
+  await newcomer.getByRole('button',{name:'Direct messages',exact:true}).click();await newcomer.getByRole('button',{name:displayName,exact:true}).click();
+  await expect(newcomer.getByRole('log').getByText(privateBody,{exact:true})).toBeVisible();await expect(newcomer.getByRole('log').getByText(privateReply,{exact:true})).toBeVisible();
  } finally { await newcomerContext.close(); }
  await page.getByRole('button', {name:'Sign out'}).click();
  await expect(page.getByRole('heading', {name:'Welcome back'})).toBeVisible();
@@ -135,6 +180,8 @@ test('real workspace bootstrap, persistence, logout and independent-context logi
   await expect(login.getByText(topicOpening, {exact:true})).toBeVisible();
   await expect(login.getByText(topicDraft, {exact:true})).toBeVisible();
   await expect(login.getByText(newcomerTopicBody, {exact:true})).toBeVisible();
+  await login.getByRole('button',{name:'Direct messages',exact:true}).click();await login.getByRole('button',{name:newcomerName,exact:true}).click();
+  await expect(login.getByRole('log').getByText(privateBody,{exact:true})).toBeVisible();await expect(login.getByRole('log').getByText(privateReply,{exact:true})).toBeVisible();
   await login.getByRole('button', {name:'Sign out'}).click();
   await expect(login.getByRole('heading', {name:'Welcome back'})).toBeVisible();
  } finally { await independent.close(); }

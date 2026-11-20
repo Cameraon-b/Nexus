@@ -28,11 +28,15 @@ public sealed class NexusDb(DbContextOptions<NexusDb> options) : DbContext(optio
         b.Entity<Conversation>().Property(c => c.State).HasMaxLength(20);
         b.Entity<Conversation>().HasOne<Participant>().WithMany().HasForeignKey(c => c.CreatedByParticipantId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<Conversation>().HasIndex(c => new { c.CreatedByParticipantId, c.ClientRequestId }).IsUnique().HasFilter("\"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL");
+        b.Entity<Conversation>().HasOne<Participant>().WithMany().HasForeignKey(c => c.DirectParticipantLowId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<Conversation>().HasOne<Participant>().WithMany().HasForeignKey(c => c.DirectParticipantHighId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<Conversation>().HasIndex(c => new { c.DirectParticipantLowId, c.DirectParticipantHighId }).IsUnique().HasFilter("\"DirectParticipantLowId\" IS NOT NULL AND \"DirectParticipantHighId\" IS NOT NULL");
         b.Entity<Conversation>().ToTable(t =>
         {
-            t.HasCheckConstraint("CK_Conversations_Kind", "\"Kind\" IN ('main', 'topical')");
+            t.HasCheckConstraint("CK_Conversations_Kind", "\"Kind\" IN ('main', 'topical', 'direct')");
             t.HasCheckConstraint("CK_Conversations_State", "\"State\" = 'active'");
-            t.HasCheckConstraint("CK_Conversations_TopicalCreator", "(\"Kind\" = 'main' AND \"CreatedByParticipantId\" IS NULL AND \"ClientRequestId\" IS NULL) OR (\"Kind\" = 'topical' AND \"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL)");
+            t.HasCheckConstraint("CK_Conversations_TopicalCreator", "(\"Kind\" IN ('main', 'direct') AND \"CreatedByParticipantId\" IS NULL AND \"ClientRequestId\" IS NULL) OR (\"Kind\" = 'topical' AND \"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL)");
+            t.HasCheckConstraint("CK_Conversations_DirectPair", "(\"Kind\" IN ('main', 'topical') AND \"DirectParticipantLowId\" IS NULL AND \"DirectParticipantHighId\" IS NULL) OR (\"Kind\" = 'direct' AND \"DirectParticipantLowId\" IS NOT NULL AND \"DirectParticipantHighId\" IS NOT NULL AND \"DirectParticipantLowId\" < \"DirectParticipantHighId\")");
         });
         b.Entity<Membership>().HasKey(m => new { m.ConversationId, m.ParticipantId });
         b.Entity<Membership>().HasOne<Conversation>().WithMany().HasForeignKey(m => m.ConversationId);

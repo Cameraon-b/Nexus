@@ -44,7 +44,8 @@ All JSON uses camelCase. Same-origin frontend proxy only; no permissive CORS pol
 | POST | `/api/auth/login` | `{email,password}` | User DTO and `nexus.session` cookie |
 | GET | `/api/auth/me` | Session cookie | User DTO |
 | POST | `/api/auth/logout` | Session cookie | 204, stored session revoked and cookie deleted |
-| GET | `/api/workspace/home` | Session cookie | Workspace Home DTO with Main compatibility fields plus all joined active public conversations |
+| GET | `/api/workspace/home` | Session cookie | Workspace Home DTO with Main compatibility fields plus all joined active public and direct conversations |
+| POST | `/api/conversations/direct` | `{participantId:UUID}` and session cookie | Conversation DTO, HTTP 200; retry-safe by unordered pair |
 | POST | `/api/conversations/topical` | `{title,description,openingMessage,clientRequestId:UUID}` and session cookie | `{conversation,openingMessage}`, HTTP 200 (also on identical retry) |
 | GET | `/api/conversations/{id}/messages` | Session cookie | Message DTO array, chronological order; 404 unknown / 403 nonmember |
 | POST | `/api/conversations/{id}/messages` | `{body,clientRequestId:UUID}` and session cookie | Message DTO, HTTP 200 (also on identical retry) |
@@ -68,10 +69,10 @@ Workspace Home DTO:
 }
 ```
 
-`conversation` and `messages` remain the Main conversation and Main messages for compatibility. `conversations` contains Main plus every active public topical conversation joined by the current participant. Conversation DTO:
+`conversation` and `messages` remain the Main conversation and Main messages for compatibility. `conversations` contains Main, joined active public Topics, and only the viewer's joined direct conversations. Direct titles use the other member's current display name and participantIds contains exactly the two members. A newly discovered DM does not change UI selection. Conversation DTO:
 
 ```text
-{id:string,title:string,kind:'main'|'topical',state:'active',participantIds:UUID[],description:string,createdAt:ISO8601}
+{id:string,title:string,kind:'main'|'topical'|'direct',state:'active',participantIds:UUID[],description:string,createdAt:ISO8601}
 ```
 
 Message DTO:
@@ -82,9 +83,11 @@ Message DTO:
 
 Topical creation trims title, description, and opening message. Title is 1–80 characters, description 0–160, opening message 1–5000, and clientRequestId must be a nonzero UUID. Creation atomically writes the topical conversation, memberships for every active participant, and its opening message. Idempotency is per creator/clientRequestId: an identical normalized retry returns the original conversation and opening message, while changed content or reuse by the message endpoint returns 409. Registration joins the new human to Main and every active public topical conversation under the same transaction-level public-membership lock used by topical creation.
 
+Direct creation takes only the target participantId; requester identity comes exclusively from the session. Empty UUID/self returns 400; unknown, inactive or non-human target returns a generic 404. Both participants must be active humans. A transaction writes one generated 32-character-ID conversation and exactly two memberships; retries and concurrent opposite-direction requests return the same row, without a client request UUID. Stored title/description are neutral; no topical creator/request identity is stored. A namespaced canonical-pair advisory lock serializes creation/reopen; eligible participant rows are update-locked in UUID order until commit. Canonical order compares normalized `N` hex strings, matching PostgreSQL UUID order. Nullable low/high participant columns have restricted-deletion foreign keys, a filtered unique pair index, and kind/shape checks rejecting missing, equal or reversed direct pairs and public pair columns. Deferred database constraint triggers enforce exactly the canonical pair's two memberships and active-human eligibility at commit, including participant updates. A pair write fence prevents stale repeatable-read snapshots from deactivating newly referenced participants; a statement trigger also prevents membership TRUNCATE from stranding direct pairs. Direct DTO participant IDs come from the canonical pair. Downgrade explicitly deletes direct messages, memberships, and conversations before removing direct-only schema objects; public and identity/session data are preserved. Registration never joins DMs. Nonmembers receive 403 for known direct history/send IDs with no message data; unknown IDs remain 404. Main and public Topics are unchanged.
+
 The message author always comes from the resolved session's participant, never client input. Unknown fields such as client-supplied authorId are ignored. Body is trimmed and must contain 1–5000 UTF-16 code units. clientRequestId must be a nonzero UUID. Message idempotency is per author and request ID across conversations, with a database unique index and transaction-level advisory lock. Retrying the same conversation and normalized body returns the original message; changing either the conversation or normalized body returns 409.
 
-Bootstrap and registration validate email, display name (1–100 trimmed characters), and password (12–128 characters). Email is trimmed/lowercased. Registration is available only after bootstrap and atomically creates a non-admin account, active human participant, memberships in Main and all active public topical conversations, and a session. Registration before bootstrap and normalized duplicate emails return 409. Shared PostgreSQL transaction/advisory locks preserve first-admin setup races, serialize public-conversation membership changes, and make concurrent duplicate registration deterministic without orphan rows. Operations needing multiple locks always acquire them in setup → public-membership → author/client-request order. Passwords use ASP.NET Identity V3 hashing configured for 210,000 iterations. Session tokens are random 256-bit opaque values; only SHA-256 hashes are stored, with fixed seven-day expiry and revocation timestamp. Cookies are HttpOnly, SameSite=Strict, Path=/, Secure outside Development.
+Bootstrap and registration validate email, display name (1–100 trimmed characters), and password (12–128 characters). Email is trimmed/lowercased. Registration is available only after bootstrap and atomically creates a non-admin account, active human participant, memberships in Main and all active public topical conversations, and a session. Registration before bootstrap and normalized duplicate emails return 409. Shared PostgreSQL transaction/advisory locks preserve first-admin setup races, serialize public-conversation membership changes, and make concurrent duplicate registration deterministic without orphan rows. Operations needing multiple locks always acquire them in setup → public-membership → author/client-request order. Direct creation takes only its canonical-pair advisory lock, never setup/public-membership/author-request locks; message posting takes only author/request. No operation nests those advisory locks with the direct-pair lock. Passwords use ASP.NET Identity V3 hashing configured for 210,000 iterations. Session tokens are random 256-bit opaque values; only SHA-256 hashes are stored, with fixed seven-day expiry and revocation timestamp. Cookies are HttpOnly, SameSite=Strict, Path=/, Secure outside Development.
 
 Bootstrap/register/login share a per-remote-IP fixed-window limit of 10 requests/minute per app host. Limit responses are 429 ProblemDetails with `Retry-After: 60`. Validation/CSRF are safe 400 ProblemDetails; wrong credentials are a generic 401 ProblemDetails; conflicts are 409 ProblemDetails. Unexpected failures return generic 500 ProblemDetails; server logs retain diagnostic details without enabled sensitive-data logging.
 
@@ -94,14 +97,15 @@ PostgreSQL must be running and `.local/runtime.json` must contain `adminConnecti
 
 ```text
 node scripts/dotnet.mjs build backend/Nexus.slnx --configuration Release
-node scripts/dotnet.mjs test backend/Nexus.Tests --configuration Release --logger "trx;LogFileName=integration.trx" --results-directory C:/Nexus/backend/TestResults
+node scripts/test-backend.mjs
+# Optional focused run: append --filter FullyQualifiedName~DirectConversation
 node scripts/dotnet.mjs format backend/Nexus.slnx --no-restore --verify-no-changes
 ```
 
-Verified: Release build has zero warnings/errors; 81 PostgreSQL integration cases pass, none skipped. Machine-readable evidence: `backend/TestResults/integration.trx`. EF model matches the checked-in migrations.
+Sprint 5 verified: 95 PostgreSQL cases pass, none skipped; 29 frontend unit, 54 UI and 27 live-harness tests pass. Frontend build and .NET formatting verification pass. `dotnet-ef migrations has-pending-model-changes --project backend/Nexus.Infrastructure --startup-project backend/Nexus.Infrastructure` reports no changes (use the local SDK/tool environment). Focused RED/GREEN and full-suite evidence: ignored `artifacts/s5-*.log`. Migration tests upgrade disposable databases from pre-Sprint-5; no real database migration was run.
 
 ## Scope and caveats
 
-This is the local multi-human/public-conversation slice, not the full approved MVP. Open local registration, permanent Main, and persistent public topical conversations are supported. Invitations, password reset, MFA, direct conversations, agents, moderation, realtime delivery and pagination are not implemented. Reads currently return all messages. No default account exists.
+This is the local multi-human conversation slice, not the full approved MVP. Open local registration, permanent Main, public Topics and persistent one-to-one human DMs are supported. Group/agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, presence, encryption features, governance, invitations, password reset, MFA, agents, moderation, SignalR/realtime delivery and pagination are not implemented. Reads currently return all messages. No default account exists.
 
 Local-prototype migration-at-startup requires schema privileges. Production rollout should separately apply reviewed migrations and restrict app DB privileges. Rate counters are process-local and reset on restart; a shared-IP reverse proxy shares the limit unless deliberately configured otherwise. There is no session-row cleanup job or sliding renewal. Protect runtime credentials and data-protection key files with filesystem permissions; key files are not explicitly encrypted at rest. Use TLS and an appropriately secured reverse proxy outside local development.

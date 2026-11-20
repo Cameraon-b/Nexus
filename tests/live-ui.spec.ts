@@ -552,7 +552,7 @@ test('first run creates an authenticated participant-first room and signs out', 
  await expect(page.getByText('Local · connected',{exact:true})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Participants'})).toBeVisible();
  await expect(page.getByText('Start the conversation',{exact:true})).toBeVisible();
- await expect(page.getByRole('button',{name:'Direct messages — coming next'})).toBeDisabled();
+ await expect(page.getByRole('button',{name:'Direct messages',exact:true})).toBeEnabled();
  await page.getByRole('button',{name:'Sign out'}).click();
  await expect(page.getByRole('heading',{name:'Welcome back'})).toBeVisible();
 });

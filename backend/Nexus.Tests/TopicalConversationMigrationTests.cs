@@ -60,7 +60,7 @@ public class TopicalConversationMigrationTests
         Assert.Equal("Existing message", reader.GetString(4));
         Assert.True(reader.GetBoolean(5));
         Assert.True(reader.GetBoolean(6));
-        Assert.Equal(3L, reader.GetInt64(7));
+        Assert.Equal(4L, reader.GetInt64(7));
         Assert.Equal(1L, reader.GetInt64(8));
     }
 }

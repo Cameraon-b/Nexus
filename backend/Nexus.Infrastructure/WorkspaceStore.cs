@@ -10,6 +10,8 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
 
     // Global lock order for operations needing more than one lock:
     // workspace setup (IdentityStore) -> public membership -> author/client request.
+    // Direct create/reopen takes ONLY its namespaced canonical-pair lock, never
+    // any of the above locks; message sends take ONLY author/client request.
     private Task AcquireAuthorRequestLock(Guid authorId, Guid clientRequestId)
     {
         var lockKey = authorId.ToString("N") + clientRequestId.ToString("N");
@@ -70,19 +72,44 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         return new(ToDto(creation.Conversation, participantIds), MessageDto.From(creation.OpeningMessage));
     }
 
+    public async Task<ConversationDto> CreateDirect(Guid requesterId, CreateDirectConversationRequest request)
+    {
+        var candidate = Conversation.CreateDirect(requesterId, request.ParticipantId);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var key = "direct:" + candidate.DirectParticipantLowId!.Value.ToString("N") + candidate.DirectParticipantHighId!.Value.ToString("N");
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0))");
+        // Lock in UUID order before the database's pair write fence (no lock upgrades).
+        var eligible = await db.Participants.FromSqlInterpolated($"SELECT * FROM \"Participants\" WHERE \"Id\" IN ({requesterId}, {request.ParticipantId}) AND \"Kind\" = 'human' AND \"State\" = 'active' ORDER BY \"Id\" FOR UPDATE").ToArrayAsync();
+        if (eligible.Length != 2)
+            throw new RuleViolation(404, "Participant not found.");
+        var conversation = await db.Conversations.SingleOrDefaultAsync(c => c.DirectParticipantLowId == candidate.DirectParticipantLowId && c.DirectParticipantHighId == candidate.DirectParticipantHighId);
+        if (conversation is null)
+        {
+            conversation = candidate;
+            db.Conversations.Add(conversation);
+            db.Memberships.AddRange(new[] { requesterId, request.ParticipantId }.Select(id => new Membership { ConversationId = conversation.Id, ParticipantId = id }));
+            await db.SaveChangesAsync();
+        }
+        var dto = await ConversationDtoFor(conversation, requesterId);
+        await transaction.CommitAsync();
+        return dto;
+    }
+
     public async Task<HomeDto> Home(Guid participantId)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY");
         var participants = await db.Participants.AsNoTracking().OrderBy(p => p.Name).ToArrayAsync();
         var conversations = await db.Conversations.AsNoTracking()
-            .Where(c => c.State == "active" && db.Memberships.Any(m => m.ConversationId == c.Id && m.ParticipantId == participantId))
+            .Where(c => c.State == "active" && (c.Kind == "direct"
+                ? c.DirectParticipantLowId == participantId || c.DirectParticipantHighId == participantId
+                : db.Memberships.Any(m => m.ConversationId == c.Id && m.ParticipantId == participantId)))
             .OrderBy(c => c.Kind == "main" ? 0 : 1).ThenBy(c => c.CreatedAt).ThenBy(c => c.Id)
             .ToArrayAsync();
         var conversationIds = conversations.Select(c => c.Id).ToArray();
         var memberships = await db.Memberships.AsNoTracking().Where(m => conversationIds.Contains(m.ConversationId)).ToArrayAsync();
         var memberIds = memberships.GroupBy(m => m.ConversationId).ToDictionary(g => g.Key, g => g.Select(m => m.ParticipantId).ToArray());
-        var conversationDtos = conversations.Select(c => ToDto(c, memberIds[c.Id])).ToArray();
+        var conversationDtos = conversations.Select(c => ToDto(c, c.Kind == "direct" ? new[] { c.DirectParticipantLowId!.Value, c.DirectParticipantHighId!.Value } : memberIds[c.Id], c.Kind == "direct" ? participants.Single(p => p.Id == (c.DirectParticipantLowId == participantId ? c.DirectParticipantHighId : c.DirectParticipantLowId)).Name : null)).ToArray();
         var main = conversationDtos.Single(c => c.Id == "main");
         var messages = await ReadMessages("main");
         await transaction.CommitAsync();
@@ -91,9 +118,13 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
 
     private async Task RequireMembership(string conversationId, Guid participantId)
     {
-        if (!await db.Conversations.AsNoTracking().AnyAsync(c => c.Id == conversationId))
+        var conversation = await db.Conversations.AsNoTracking().SingleOrDefaultAsync(c => c.Id == conversationId);
+        if (conversation is null)
             throw new RuleViolation(404, "Conversation not found.");
-        if (!await db.Memberships.AsNoTracking().AnyAsync(m => m.ConversationId == conversationId && m.ParticipantId == participantId))
+        var authorized = conversation.Kind == "direct"
+            ? conversation.DirectParticipantLowId == participantId || conversation.DirectParticipantHighId == participantId
+            : await db.Memberships.AsNoTracking().AnyAsync(m => m.ConversationId == conversationId && m.ParticipantId == participantId);
+        if (!authorized)
             throw new RuleViolation(403, "Conversation membership is required.");
     }
 
@@ -101,12 +132,17 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         (await db.Messages.AsNoTracking().Where(m => m.ConversationId == conversationId).OrderBy(m => m.CreatedAt).ThenBy(m => m.Id).ToArrayAsync())
         .Select(MessageDto.From).ToArray();
 
-    private async Task<ConversationDto> ConversationDtoFor(Conversation conversation)
+    private async Task<ConversationDto> ConversationDtoFor(Conversation conversation, Guid? viewerId = null)
     {
-        var ids = await db.Memberships.AsNoTracking().Where(m => m.ConversationId == conversation.Id).Select(m => m.ParticipantId).ToArrayAsync();
-        return ToDto(conversation, ids);
+        var ids = conversation.Kind == "direct"
+            ? new[] { conversation.DirectParticipantLowId!.Value, conversation.DirectParticipantHighId!.Value }
+            : await db.Memberships.AsNoTracking().Where(m => m.ConversationId == conversation.Id).Select(m => m.ParticipantId).ToArrayAsync();
+        var title = conversation.Kind == "direct"
+            ? await db.Participants.Where(p => p.Id == (conversation.DirectParticipantLowId == viewerId ? conversation.DirectParticipantHighId : conversation.DirectParticipantLowId)).Select(p => p.Name).SingleAsync()
+            : null;
+        return ToDto(conversation, ids, title);
     }
 
-    private static ConversationDto ToDto(Conversation conversation, Guid[] participantIds) =>
-        new(conversation.Id, conversation.Title, conversation.Kind, conversation.State, participantIds, conversation.Description, conversation.CreatedAt);
+    private static ConversationDto ToDto(Conversation conversation, Guid[] participantIds, string? title = null) =>
+        new(conversation.Id, title ?? conversation.Title, conversation.Kind, conversation.State, participantIds, conversation.Description, conversation.CreatedAt);
 }

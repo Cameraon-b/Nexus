@@ -1,6 +1,7 @@
 using Nexus.Domain;
 namespace Nexus.Application;
 
+/// <summary>A joined conversation. Kind is main, topical, or direct; direct titles are viewer-specific.</summary>
 public sealed record ConversationDto(
     string Id,
     string Title,
@@ -10,6 +11,7 @@ public sealed record ConversationDto(
     string Description,
     DateTimeOffset CreatedAt);
 public sealed record HomeDto(Participant[] Participants, ConversationDto Conversation, MessageDto[] Messages, ConversationDto[] Conversations);
+public sealed record CreateDirectConversationRequest(Guid ParticipantId);
 public sealed record PostMessageRequest(string Body, Guid ClientRequestId);
 public sealed record CreateTopicalConversationRequest(string Title, string Description, string OpeningMessage, Guid ClientRequestId);
 public sealed record CreateTopicalConversationResponse(ConversationDto Conversation, MessageDto OpeningMessage);
@@ -19,6 +21,7 @@ public sealed record MessageDto(Guid Id, string ConversationId, Guid AuthorId, s
 }
 public interface IWorkspaceStore
 {
+    Task<ConversationDto> CreateDirect(Guid requesterId, CreateDirectConversationRequest request);
     Task<HomeDto> Home(Guid participantId);
     Task<MessageDto[]> Messages(string conversationId, Guid participantId);
     Task<MessageDto> Post(string conversationId, Guid authorId, PostMessageRequest request);

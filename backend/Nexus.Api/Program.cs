@@ -82,6 +82,11 @@ app.MapGet("/api/workspace/home", async (IIdentityStore identity, IWorkspaceStor
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
     return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Home(user.ParticipantId));
 });
+app.MapPost("/api/conversations/direct", async (CreateDirectConversationRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    return user is null ? Results.Unauthorized() : Results.Ok(await workspace.CreateDirect(user.ParticipantId, request));
+});
 app.MapPost("/api/conversations/topical", async (CreateTopicalConversationRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
 {
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);

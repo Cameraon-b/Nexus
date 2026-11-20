@@ -79,6 +79,12 @@ namespace Nexus.Infrastructure.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
 
+                    b.Property<Guid?>("DirectParticipantHighId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("DirectParticipantLowId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -96,17 +102,25 @@ namespace Nexus.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DirectParticipantHighId");
+
                     b.HasIndex("CreatedByParticipantId", "ClientRequestId")
                         .IsUnique()
                         .HasFilter("\"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL");
 
+                    b.HasIndex("DirectParticipantLowId", "DirectParticipantHighId")
+                        .IsUnique()
+                        .HasFilter("\"DirectParticipantLowId\" IS NOT NULL AND \"DirectParticipantHighId\" IS NOT NULL");
+
                     b.ToTable("Conversations", t =>
                         {
-                            t.HasCheckConstraint("CK_Conversations_Kind", "\"Kind\" IN ('main', 'topical')");
+                            t.HasCheckConstraint("CK_Conversations_DirectPair", "(\"Kind\" IN ('main', 'topical') AND \"DirectParticipantLowId\" IS NULL AND \"DirectParticipantHighId\" IS NULL) OR (\"Kind\" = 'direct' AND \"DirectParticipantLowId\" IS NOT NULL AND \"DirectParticipantHighId\" IS NOT NULL AND \"DirectParticipantLowId\" < \"DirectParticipantHighId\")");
+
+                            t.HasCheckConstraint("CK_Conversations_Kind", "\"Kind\" IN ('main', 'topical', 'direct')");
 
                             t.HasCheckConstraint("CK_Conversations_State", "\"State\" = 'active'");
 
-                            t.HasCheckConstraint("CK_Conversations_TopicalCreator", "(\"Kind\" = 'main' AND \"CreatedByParticipantId\" IS NULL AND \"ClientRequestId\" IS NULL) OR (\"Kind\" = 'topical' AND \"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL)");
+                            t.HasCheckConstraint("CK_Conversations_TopicalCreator", "(\"Kind\" IN ('main', 'direct') AND \"CreatedByParticipantId\" IS NULL AND \"ClientRequestId\" IS NULL) OR (\"Kind\" = 'topical' AND \"CreatedByParticipantId\" IS NOT NULL AND \"ClientRequestId\" IS NOT NULL)");
                         });
                 });
 
@@ -231,6 +245,16 @@ namespace Nexus.Infrastructure.Migrations
                     b.HasOne("Nexus.Domain.Participant", null)
                         .WithMany()
                         .HasForeignKey("CreatedByParticipantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Nexus.Domain.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("DirectParticipantHighId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Nexus.Domain.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("DirectParticipantLowId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

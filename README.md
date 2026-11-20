@@ -18,13 +18,16 @@ On first visit, create your own administrator account (display name, email, pass
 
 - First-admin setup, additional local human registration, sign-in, sign-out and seven-day server-side sessions
 - HttpOnly cookies, CSRF protection, password hashing, authentication rate limits
-- A shared persistent Main conversation plus public topical conversations with server-derived authorship
+- A shared persistent Main conversation, public Topics, and private one-to-one human Direct messages with server-derived authorship
 - Topic creation with title, description, opening message, all-human membership, retry-safe IDs, and per-conversation drafts
 - Retry-safe message IDs, validation, five-second participant/conversation/message polling and connection-error states
-- Responsive, keyboard-accessible topic navigation and creation dialog
+- Responsive, keyboard-accessible Topics and Direct messages navigation with accessible creation dialogs
+- Direct creation/reopen via `POST /api/conversations/direct` with only `{participantId}`: the same unordered human pair always returns one durable conversation (no request UUID)
+- Conversation DTO kinds are `main`, `topical`, and `direct`; direct titles show the other person's current name. Duplicate names are disambiguated in the UI with participant-ID suffixes. Only the two members can discover/read/post; later registration joins only public conversations
+- Successful home snapshots reconcile authoritatively; removed/denied conversations lose their private caches and selection. Locally successful creates survive stale polls until observed by a later snapshot
 - The prototype's sage/dark shell, participant-first layout and mobile treatment
 
-**Still to build:** invitations or closed registration policy, direct messages, topic archiving/unread state, agent connectors, approval governance backed by the server, password recovery, and deployment on Nora. Direct messages and governance remain marked as coming next. `/demo` still offers broader sample flows for design iteration; nothing there is connected to the real database. Registration is intended only for this loopback local-development workspace; this is not a hardened production/LAN release.
+**Still to build:** invitations or closed registration policy, group/agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, presence, encryption features, topic archiving, agent connectors, approval governance backed by the server, password recovery, and deployment on Nora. Governance remains marked as coming next. `/demo` still offers broader sample flows for design iteration; nothing there is connected to the real database. Registration is intended only for this loopback local-development workspace; this is not a hardened production/LAN release.
 
 ## Local data and secrets
 
@@ -51,13 +54,15 @@ npm run dev            # frontend only; proxies /api to 5080
 npm test               # TypeScript unit tests
 npm run test:tooling   # local runtime configuration tests
 npm run test:backend   # real-PostgreSQL integration tests
-npm run test:ui        # preserved demo + private-file serving tests
+npm run test:ui        # demo + intercepted live UI + private-file serving tests
 npm run test:live      # live UI/API/DB integration + UI-state tests
 npm run build          # typecheck and build frontend
 npm run build:api      # build ASP.NET API
 ```
 
 Backend tests create/drop only unique `nexus_test_*` databases. Live browser tests use unique `nexus_ui_test_*` databases on API5081/UI5176, then drop them. They never bootstrap or reset your real `nexus` database. Test key files are generated and ignored. Tests include synthetic test-only passwords; those are not account defaults.
+
+Sprint 5 verification: 29 unit tests, 95 real-PostgreSQL backend tests, 54 UI tests, and 27 live-harness tests passed. Frontend build, .NET formatting and EF pending-model checks passed. Focused RED/GREEN output is in ignored `artifacts/s5-*.log`.
 
 On a fresh Windows checkout: install Node and Docker Desktop, run `npm ci`, then `python scripts/install-sdk.py` to download the SDK pinned in global.json (SHA-512 verified, extracted locally), and `npm run setup`. Browser tests additionally need Playwright Chromium installed with `PLAYWRIGHT_BROWSERS_PATH` set to the repository's `.browsers` directory. The supplied environment already has these prerequisites. Linux deployments should use the pinned .NET SDK with their own provisioning; Nora deployment is not delivered in this slice.
 
