@@ -53,6 +53,8 @@ public sealed class IdentityStore(NexusDb db, IPasswordHasher<Account> hasher) :
         var account = await db.Accounts.SingleOrDefaultAsync(a => a.Email == email);
         if (account is null || request.Password is null || request.Password.Length > 128 || hasher.VerifyHashedPassword(account, account.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
             throw new RuleViolation(401, "Invalid email or password.");
+        if (!await db.Participants.AnyAsync(p => p.Id == account.ParticipantId && p.Kind == "human" && p.State == "active"))
+            throw new RuleViolation(401, "Invalid email or password.");
         return await Issue(account);
     }
     private async Task<SessionResult> Issue(Account account)

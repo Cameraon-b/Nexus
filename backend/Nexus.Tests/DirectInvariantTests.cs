@@ -20,7 +20,8 @@ public class DirectInvariantTests
     [InlineData("missing")]
     [InlineData("nonpair")]
     [InlineData("inactive")]
-    [InlineData("agent")]
+    [InlineData("service")]
+    [InlineData("agent-agent")]
     [InlineData("truncate")]
     public async Task Commit_rejects_invalid_direct_authorization(string mutation)
     {
@@ -41,7 +42,8 @@ public class DirectInvariantTests
             "nonpair" => $"UPDATE \"Memberships\" SET \"ParticipantId\"='{C}' WHERE \"ConversationId\"='dm' AND \"ParticipantId\"='{B}'",
             "truncate" => "TRUNCATE TABLE \"Memberships\"",
             "inactive" => $"UPDATE \"Participants\" SET \"State\"='inactive' WHERE \"Id\"='{B}'",
-            _ => $"UPDATE \"Participants\" SET \"Kind\"='agent' WHERE \"Id\"='{B}'"
+            "agent-agent" => $"UPDATE \"Participants\" SET \"Kind\"='agent' WHERE \"Id\" IN ('{A}','{B}')",
+            _ => $"UPDATE \"Participants\" SET \"Kind\"='service' WHERE \"Id\"='{B}'"
         };
         var error = await Assert.ThrowsAsync<PostgresException>(() => Exec(db, "BEGIN;" + sql + "; COMMIT;"));
         Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);

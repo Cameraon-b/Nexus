@@ -60,7 +60,7 @@ public class SecurityBoundaryTests
         await w.Bootstrap();
         await using var db = new NpgsqlConnection(w.Connection);
         await db.OpenAsync();
-        await using var command = new NpgsqlCommand("DROP TABLE \"Messages\"", db);
+        await using var command = new NpgsqlCommand("DROP TABLE \"Messages\" CASCADE", db);
         await command.ExecuteNonQueryAsync();
         var response = await w.Client.GetAsync("/api/conversations/main/messages");
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);

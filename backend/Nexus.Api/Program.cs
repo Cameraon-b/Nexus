@@ -13,6 +13,8 @@ builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true)
 builder.Services.AddDbContext<NexusDb>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Nexus") ?? throw new InvalidOperationException("ConnectionStrings:Nexus is required.")));
 builder.Services.AddScoped<IIdentityStore, IdentityStore>();
 builder.Services.AddScoped<IWorkspaceStore, WorkspaceStore>();
+builder.Services.AddScoped<AgentStore>();
+builder.Services.AddScoped<IntegrationStore>();
 builder.Services.AddScoped<IPasswordHasher<Account>, PasswordHasher<Account>>();
 builder.Services.Configure<PasswordHasherOptions>(o => o.IterationCount = 210_000);
 var keyPath = builder.Configuration["Nexus:DataProtectionPath"] ?? "C:/Nexus/.local/keys";
@@ -34,7 +36,8 @@ app.Use(async (context, next) =>
 {
     try
     {
-        if (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method))
+        if (context.GetEndpoint()?.Metadata.GetMetadata<IntegrationBearerOnly>() is null
+            && (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method)))
             await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context);
         await next(context);
     }
@@ -77,31 +80,93 @@ app.MapPost("/api/auth/logout", async (IIdentityStore store, HttpContext context
     return Results.NoContent();
 });
 app.MapGet("/api/auth/me", async (IIdentityStore store, HttpContext context) => await store.Resolve(context.Request.Cookies["nexus.session"]) is { } user ? Results.Ok(user) : Results.Unauthorized());
-app.MapGet("/api/workspace/home", async (IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+var humanWorkspace = app.MapGroup("/api/workspace").AddEndpointFilter(RequireHumanWorkspace);
+var humanConversations = app.MapGroup("/api/conversations").AddEndpointFilter(RequireHumanWorkspace);
+humanWorkspace.MapGet("/home", async (IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
 {
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
     return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Home(user.ParticipantId));
 });
-app.MapPost("/api/conversations/direct", async (CreateDirectConversationRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+humanConversations.MapPost("/direct", async (CreateDirectConversationRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
 {
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
     return user is null ? Results.Unauthorized() : Results.Ok(await workspace.CreateDirect(user.ParticipantId, request));
 });
-app.MapPost("/api/conversations/topical", async (CreateTopicalConversationRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+humanConversations.MapPost("/topical", async (CreateTopicalConversationRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
 {
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
     return user is null ? Results.Unauthorized() : Results.Ok(await workspace.CreateTopical(user.ParticipantId, request));
 });
-app.MapGet("/api/conversations/{conversationId}/messages", async (string conversationId, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+humanConversations.MapGet("/{conversationId}/messages", async (string conversationId, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
 {
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
     return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Messages(conversationId, user.ParticipantId));
 });
-app.MapPost("/api/conversations/{conversationId}/messages", async (string conversationId, PostMessageRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
+humanConversations.MapPost("/{conversationId}/messages", async (string conversationId, PostMessageRequest request, IIdentityStore identity, IWorkspaceStore workspace, HttpContext context) =>
 {
     var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
     return user is null ? Results.Unauthorized() : Results.Ok(await workspace.Post(conversationId, user.ParticipantId, request));
 });
 
+app.MapGet("/api/admin/agents", async (AgentStore agents, IIdentityStore identity, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    await agents.RequireAdmin(user?.Id);
+    return Results.Ok(await agents.List());
+});
+app.MapPost("/api/admin/agents", async (CreateAgentRequest request, AgentStore agents, IIdentityStore identity, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    await agents.RequireAdmin(user?.Id);
+    var result = await agents.Create(request);
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(result);
+});
+app.MapGet("/api/admin/agents/{participantId:guid}/tokens", async (Guid participantId, AgentStore agents, IIdentityStore identity, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    await agents.RequireAdmin(user?.Id);
+    return Results.Ok(await agents.Tokens(participantId));
+});
+
+app.MapPost("/api/admin/agents/{participantId:guid}/tokens", async (Guid participantId, IssueIntegrationTokenRequest request, AgentStore agents, IIdentityStore identity, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    await agents.RequireAdmin(user?.Id);
+    var result = await agents.Replace(participantId, request);
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(result);
+});
+app.MapPost("/api/admin/integration-tokens/{tokenId:guid}/revoke", async (Guid tokenId, AgentStore agents, IIdentityStore identity, HttpContext context) =>
+{
+    var user = await identity.Resolve(context.Request.Cookies["nexus.session"]);
+    await agents.RequireAdmin(user?.Id);
+    await agents.Revoke(tokenId);
+    return Results.NoContent();
+});
+var integrationsApi = app.MapGroup("/api/integrations").WithMetadata(new IntegrationBearerOnly());
+integrationsApi.MapPost("/drafts", async (ProposeDraftRequest request, IntegrationStore integrations, HttpContext context) =>
+    Results.Ok(await integrations.Propose(context.Request.Headers.Authorization.ToString(), request)));
+integrationsApi.MapGet("/drafts", async (IntegrationStore integrations, HttpContext context) =>
+    Results.Ok(await integrations.Drafts(context.Request.Headers.Authorization.ToString())));
+integrationsApi.MapGet("/inbox", async (string? after, int? limit, IntegrationStore integrations, HttpContext context) =>
+    Results.Ok(await integrations.Inbox(context.Request.Headers.Authorization.ToString(), after, limit)));
+integrationsApi.MapGet("/me", async (IntegrationStore integrations, HttpContext context) =>
+{
+    return Results.Ok(await integrations.Me(context.Request.Headers.Authorization.ToString()));
+});
+
+async ValueTask<object?> RequireHumanWorkspace(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+{
+    var context = invocation.HttpContext;
+    var user = await context.RequestServices.GetRequiredService<IIdentityStore>().Resolve(context.Request.Cookies["nexus.session"]);
+    if (user is null) return Results.Unauthorized();
+    var db = context.RequestServices.GetRequiredService<NexusDb>();
+    if (!await db.Participants.AnyAsync(p => p.Id == user.ParticipantId && p.Kind == "human" && p.State == "active"))
+        throw new RuleViolation(403, "Active human participant required.");
+    return await next(invocation);
+}
+
 app.Run();
 public partial class Program { }
+internal sealed class IntegrationBearerOnly { }

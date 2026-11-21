@@ -12,6 +12,10 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
     // workspace setup (IdentityStore) -> public membership -> author/client request.
     // Direct create/reopen takes ONLY its namespaced canonical-pair lock, never
     // any of the above locks; message sends take ONLY author/client request.
+    // Agent creation takes public membership only. Integration authentication,
+    // token replacement and revocation take their namespaced agent lock only
+    // (then row writes). Draft submission takes agent -> author/client request;
+    // no operation takes these in reverse or takes public/pair locks after agent.
     private Task AcquireAuthorRequestLock(Guid authorId, Guid clientRequestId)
     {
         var lockKey = authorId.ToString("N") + clientRequestId.ToString("N");
@@ -30,6 +34,8 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         var message = Message.Deliver(conversationId, authorId, request.Body, request.ClientRequestId);
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AcquireAuthorRequestLock(authorId, request.ClientRequestId);
+        if (await db.MessageDrafts.AnyAsync(d => d.AuthorId == authorId && d.ClientRequestId == request.ClientRequestId))
+            throw new RuleViolation(409, "clientRequestId was already used for a draft.");
         if (await db.Conversations.AnyAsync(c => c.CreatedByParticipantId == authorId && c.ClientRequestId == request.ClientRequestId))
             throw new RuleViolation(409, "clientRequestId was already used to create a conversation.");
         var existing = await db.Messages.SingleOrDefaultAsync(m => m.AuthorId == authorId && m.ClientRequestId == request.ClientRequestId);
@@ -51,6 +57,8 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         await using var transaction = await db.Database.BeginTransactionAsync();
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({PublicMembershipLock})");
         await AcquireAuthorRequestLock(creatorId, request.ClientRequestId);
+        if (await db.MessageDrafts.AnyAsync(d => d.AuthorId == creatorId && d.ClientRequestId == request.ClientRequestId))
+            throw new RuleViolation(409, "clientRequestId was already used for a draft.");
         var existing = await db.Conversations.SingleOrDefaultAsync(c => c.CreatedByParticipantId == creatorId && c.ClientRequestId == request.ClientRequestId);
         if (existing is not null)
         {
@@ -79,8 +87,8 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         var key = "direct:" + candidate.DirectParticipantLowId!.Value.ToString("N") + candidate.DirectParticipantHighId!.Value.ToString("N");
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0))");
         // Lock in UUID order before the database's pair write fence (no lock upgrades).
-        var eligible = await db.Participants.FromSqlInterpolated($"SELECT * FROM \"Participants\" WHERE \"Id\" IN ({requesterId}, {request.ParticipantId}) AND \"Kind\" = 'human' AND \"State\" = 'active' ORDER BY \"Id\" FOR UPDATE").ToArrayAsync();
-        if (eligible.Length != 2)
+        var eligible = await db.Participants.FromSqlInterpolated($"SELECT * FROM \"Participants\" WHERE \"Id\" IN ({requesterId}, {request.ParticipantId}) AND \"Kind\" IN ('human', 'agent') AND \"State\" = 'active' ORDER BY \"Id\" FOR UPDATE").ToArrayAsync();
+        if (eligible.Length != 2 || eligible.Single(p => p.Id == requesterId).Kind != "human")
             throw new RuleViolation(404, "Participant not found.");
         var conversation = await db.Conversations.SingleOrDefaultAsync(c => c.DirectParticipantLowId == candidate.DirectParticipantLowId && c.DirectParticipantHighId == candidate.DirectParticipantHighId);
         if (conversation is null)
@@ -100,10 +108,7 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
         await db.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY");
         var participants = await db.Participants.AsNoTracking().OrderBy(p => p.Name).ToArrayAsync();
-        var conversations = await db.Conversations.AsNoTracking()
-            .Where(c => c.State == "active" && (c.Kind == "direct"
-                ? c.DirectParticipantLowId == participantId || c.DirectParticipantHighId == participantId
-                : db.Memberships.Any(m => m.ConversationId == c.Id && m.ParticipantId == participantId)))
+        var conversations = await ConversationAccess.For(db, participantId)
             .OrderBy(c => c.Kind == "main" ? 0 : 1).ThenBy(c => c.CreatedAt).ThenBy(c => c.Id)
             .ToArrayAsync();
         var conversationIds = conversations.Select(c => c.Id).ToArray();
@@ -121,9 +126,7 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         var conversation = await db.Conversations.AsNoTracking().SingleOrDefaultAsync(c => c.Id == conversationId);
         if (conversation is null)
             throw new RuleViolation(404, "Conversation not found.");
-        var authorized = conversation.Kind == "direct"
-            ? conversation.DirectParticipantLowId == participantId || conversation.DirectParticipantHighId == participantId
-            : await db.Memberships.AsNoTracking().AnyAsync(m => m.ConversationId == conversationId && m.ParticipantId == participantId);
+        var authorized = await ConversationAccess.For(db, participantId).AnyAsync(c => c.Id == conversationId);
         if (!authorized)
             throw new RuleViolation(403, "Conversation membership is required.");
     }

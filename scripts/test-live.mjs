@@ -26,7 +26,7 @@ try {
  if(!ready)throw new Error('Test API startup timed out.');
  ui=await createServer({root,server:{host:'127.0.0.1',port:5176,strictPort:true,proxy:{'/api':{target:'http://127.0.0.1:5081',changeOrigin:false}}}});
  await ui.listen();
- const child=spawn(process.execPath,['node_modules/playwright/cli.js','test','--config','playwright.live.config.ts',...process.argv.slice(2)],{cwd:root,stdio:'inherit',env:{...process.env,NEXUS_UI_TEST:'1',PLAYWRIGHT_BROWSERS_PATH:`${root}/.browsers`,TMP:`${root}/.cache/tmp`,TEMP:`${root}/.cache/tmp`}});
+ const child=spawn(process.execPath,['node_modules/playwright/cli.js','test','--config','playwright.live.config.ts',...process.argv.slice(2)],{cwd:root,stdio:'inherit',env:{...process.env,NEXUS_UI_TEST:'1',NEXUS_UI_DATABASE:database,PLAYWRIGHT_BROWSERS_PATH:`${root}/.browsers`,TMP:`${root}/.cache/tmp`,TEMP:`${root}/.cache/tmp`}});
  const [code]=await once(child,'exit');process.exitCode=code??1;
 }catch(error){console.error(error.message);process.exitCode=1;}
 finally{

@@ -5,7 +5,7 @@ import PersistentWorkspace from './PersistentWorkspace';
 import './live.css';
 
 type User = {id:string; email:string; displayName:string; participantId:string; isAdmin:boolean};
-type Person = {id:string; name:string; kind:'human'; state:'active'; availability:'available'; isAdmin:boolean; description?:string};
+type Person = import('./ManageAgents').AgentPerson;
 type Message = {id:string; conversationId:string; authorId:string; body:string; state:'delivered'; createdAt:string};
 type Room = {participants:Person[]; conversation:{id:string; title:string; description:string; participantIds:string[]}; messages:Message[]};
 type AuthDraft = {email:string; displayName:string};

@@ -126,7 +126,7 @@ public class DirectConversationApiTests
         var aid = a.GetProperty("participantId").GetGuid();
         await using var db = new NpgsqlConnection(w.Connection);
         await db.OpenAsync();
-        foreach (var (kind, state) in new[] { ("human", "inactive"), ("agent", "active") })
+        foreach (var (kind, state) in new[] { ("human", "inactive"), ("service", "active"), ("agent", "inactive") })
         {
             var id = Guid.NewGuid();
             await using var seed = new NpgsqlCommand("INSERT INTO \"Participants\" (\"Id\",\"Name\",\"Kind\",\"State\",\"Availability\",\"IsAdmin\") VALUES (@id,'Secret target',@kind,@state,'available',false)", db);

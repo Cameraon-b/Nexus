@@ -124,6 +124,77 @@ namespace Nexus.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nexus.Domain.InboxCursor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ParticipantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParticipantId", "MessageId")
+                        .IsUnique();
+
+                    b.ToTable("InboxCursors");
+                });
+
+            modelBuilder.Entity("Nexus.Domain.IntegrationToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ParticipantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParticipantId")
+                        .IsUnique()
+                        .HasFilter("\"State\" = 'active'");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("IntegrationTokens", t =>
+                        {
+                            t.HasCheckConstraint("CK_IntegrationTokens_Hash", "\"TokenHash\" ~ '^[0-9A-F]{64}$'");
+
+                            t.HasCheckConstraint("CK_IntegrationTokens_Label", "length(btrim(\"Label\")) BETWEEN 1 AND 100 AND \"Label\" = btrim(\"Label\")");
+
+                            t.HasCheckConstraint("CK_IntegrationTokens_State", "(\"State\" = 'active' AND \"RevokedAt\" IS NULL) OR (\"State\" = 'revoked' AND \"RevokedAt\" IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Nexus.Domain.Membership", b =>
                 {
                     b.Property<string>("ConversationId")
@@ -178,6 +249,62 @@ namespace Nexus.Infrastructure.Migrations
                     b.ToTable("Messages");
                 });
 
+            modelBuilder.Entity("Nexus.Domain.MessageDraft", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<Guid>("ClientRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ConversationId")
+                        .IsRequired()
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SourceMessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("SubmittedTokenId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversationId");
+
+                    b.HasIndex("SourceMessageId");
+
+                    b.HasIndex("SubmittedTokenId");
+
+                    b.HasIndex("AuthorId", "ClientRequestId")
+                        .IsUnique();
+
+                    b.ToTable("MessageDrafts", t =>
+                        {
+                            t.HasCheckConstraint("CK_MessageDrafts_Body", "length(btrim(\"Body\")) BETWEEN 1 AND 5000 AND \"Body\" = btrim(\"Body\")");
+
+                            t.HasCheckConstraint("CK_MessageDrafts_Request", "\"ClientRequestId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
+
+                            t.HasCheckConstraint("CK_MessageDrafts_State", "\"State\" = 'pending'");
+                        });
+                });
+
             modelBuilder.Entity("Nexus.Domain.Participant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -187,6 +314,11 @@ namespace Nexus.Infrastructure.Migrations
                     b.Property<string>("Availability")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
 
                     b.Property<bool>("IsAdmin")
                         .HasColumnType("boolean");
@@ -206,7 +338,18 @@ namespace Nexus.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Participants");
+                    b.ToTable("Participants", t =>
+                        {
+                            t.HasCheckConstraint("CK_Participants_Availability", "\"Availability\" IN ('available', 'away', 'offline', 'unknown')");
+
+                            t.HasCheckConstraint("CK_Participants_Description", "\"Description\" = btrim(\"Description\")");
+
+                            t.HasCheckConstraint("CK_Participants_Kind", "\"Kind\" IN ('human', 'agent', 'service')");
+
+                            t.HasCheckConstraint("CK_Participants_Name", "length(btrim(\"Name\")) BETWEEN 1 AND 100 AND \"Name\" = btrim(\"Name\")");
+
+                            t.HasCheckConstraint("CK_Participants_State", "\"State\" IN ('active', 'inactive', 'suspended', 'blocked')");
+                        });
                 });
 
             modelBuilder.Entity("Nexus.Domain.Session", b =>
@@ -258,6 +401,24 @@ namespace Nexus.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("Nexus.Domain.InboxCursor", b =>
+                {
+                    b.HasOne("Nexus.Domain.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("ParticipantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nexus.Domain.IntegrationToken", b =>
+                {
+                    b.HasOne("Nexus.Domain.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("ParticipantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nexus.Domain.Membership", b =>
                 {
                     b.HasOne("Nexus.Domain.Conversation", null)
@@ -285,6 +446,32 @@ namespace Nexus.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("ConversationId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nexus.Domain.MessageDraft", b =>
+                {
+                    b.HasOne("Nexus.Domain.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Nexus.Domain.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nexus.Domain.Message", null)
+                        .WithMany()
+                        .HasForeignKey("SourceMessageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Nexus.Domain.IntegrationToken", null)
+                        .WithMany()
+                        .HasForeignKey("SubmittedTokenId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

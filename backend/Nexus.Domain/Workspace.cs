@@ -4,6 +4,7 @@ public sealed class Participant
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
     public string Kind { get; set; } = "human";
     public string State { get; set; } = "active";
     public string Availability { get; set; } = "available";

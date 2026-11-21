@@ -30,7 +30,7 @@ test('new message dialog validates, traps focus, guards pending closure, retries
  const trigger=page.getByRole('button',{name:'New message',exact:true});await trigger.click();
  const dialog=page.getByRole('dialog',{name:'New message',exact:true});const select=page.getByLabel('Recipient');const close=page.getByRole('button',{name:'Close new message'});const submit=page.getByRole('button',{name:'Open conversation'});
  await expect(dialog).toHaveAttribute('aria-modal','true');await expect(select).toBeFocused();await expect(page.locator('.workspace-surface')).toHaveAttribute('inert','');
- await expect(select.locator('option')).toHaveText(['Choose a person',people[1].name]);
+ await expect(select.locator('option')).toHaveText(['Choose a person',people[1].name,'Agent · AGENT · unknown']);
  await close.focus();await close.press('Shift+Tab');await expect(submit).toBeFocused();await submit.press('Tab');await expect(close).toBeFocused();
  await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(trigger).toBeFocused();
  await trigger.click();await page.locator('.direct-dialog-backdrop').click({position:{x:2,y:2}});await expect(dialog).toHaveCount(0);await expect(trigger).toBeFocused();
