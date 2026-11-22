@@ -59,6 +59,63 @@ namespace Nexus.Infrastructure.Migrations
                     b.ToTable("Accounts");
                 });
 
+            modelBuilder.Entity("Nexus.Domain.ApprovalDecision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClientRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("DeliveredMessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FinalBody")
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ReviewerParticipantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeliveredMessageId")
+                        .IsUnique();
+
+                    b.HasIndex("DraftId")
+                        .IsUnique();
+
+                    b.HasIndex("ReviewerParticipantId", "ClientRequestId")
+                        .IsUnique();
+
+                    b.ToTable("ApprovalDecisions", t =>
+                        {
+                            t.HasCheckConstraint("CK_ApprovalDecisions_Body", "\"FinalBody\" IS NULL OR (length(btrim(\"FinalBody\")) BETWEEN 1 AND 5000 AND \"FinalBody\" = btrim(\"FinalBody\"))");
+
+                            t.HasCheckConstraint("CK_ApprovalDecisions_Reason", "\"Reason\" IS NULL OR (length(btrim(\"Reason\")) BETWEEN 1 AND 1000 AND \"Reason\" = btrim(\"Reason\"))");
+
+                            t.HasCheckConstraint("CK_ApprovalDecisions_Request", "\"ClientRequestId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
+
+                            t.HasCheckConstraint("CK_ApprovalDecisions_Shape", "(\"Outcome\" IN ('approved','approved_with_edits') AND \"FinalBody\" IS NOT NULL AND \"DeliveredMessageId\" IS NOT NULL) OR (\"Outcome\" = 'rejected' AND \"FinalBody\" IS NULL AND \"DeliveredMessageId\" IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Nexus.Domain.Conversation", b =>
                 {
                     b.Property<string>("Id")
@@ -234,6 +291,12 @@ namespace Nexus.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("EditedBeforeRelease")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("SourceDraftId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("State")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -241,12 +304,18 @@ namespace Nexus.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("SourceDraftId")
+                        .IsUnique();
+
                     b.HasIndex("AuthorId", "ClientRequestId")
                         .IsUnique();
 
                     b.HasIndex("ConversationId", "CreatedAt", "Id");
 
-                    b.ToTable("Messages");
+                    b.ToTable("Messages", t =>
+                        {
+                            t.HasCheckConstraint("CK_Messages_EditedLineage", "NOT \"EditedBeforeRelease\" OR \"SourceDraftId\" IS NOT NULL");
+                        });
                 });
 
             modelBuilder.Entity("Nexus.Domain.MessageDraft", b =>
@@ -271,6 +340,9 @@ namespace Nexus.Infrastructure.Migrations
                         .HasColumnType("character varying(40)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("SourceMessageId")
@@ -301,7 +373,7 @@ namespace Nexus.Infrastructure.Migrations
 
                             t.HasCheckConstraint("CK_MessageDrafts_Request", "\"ClientRequestId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
 
-                            t.HasCheckConstraint("CK_MessageDrafts_State", "\"State\" = 'pending'");
+                            t.HasCheckConstraint("CK_MessageDrafts_State", "(\"State\" = 'pending' AND \"ResolvedAt\" IS NULL) OR (\"State\" IN ('approved','approved_with_edits','rejected') AND \"ResolvedAt\" IS NOT NULL)");
                         });
                 });
 
@@ -383,6 +455,28 @@ namespace Nexus.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nexus.Domain.ApprovalDecision", b =>
+                {
+                    b.HasOne("Nexus.Domain.Message", "DeliveredMessage")
+                        .WithMany()
+                        .HasForeignKey("DeliveredMessageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Nexus.Domain.MessageDraft", null)
+                        .WithMany()
+                        .HasForeignKey("DraftId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Nexus.Domain.Participant", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewerParticipantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DeliveredMessage");
+                });
+
             modelBuilder.Entity("Nexus.Domain.Conversation", b =>
                 {
                     b.HasOne("Nexus.Domain.Participant", null)
@@ -447,6 +541,11 @@ namespace Nexus.Infrastructure.Migrations
                         .HasForeignKey("ConversationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Nexus.Domain.MessageDraft", null)
+                        .WithMany()
+                        .HasForeignKey("SourceDraftId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Nexus.Domain.MessageDraft", b =>

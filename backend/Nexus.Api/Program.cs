@@ -15,6 +15,7 @@ builder.Services.AddScoped<IIdentityStore, IdentityStore>();
 builder.Services.AddScoped<IWorkspaceStore, WorkspaceStore>();
 builder.Services.AddScoped<AgentStore>();
 builder.Services.AddScoped<IntegrationStore>();
+builder.Services.AddScoped<IApprovalStore, ApprovalStore>();
 builder.Services.AddScoped<IPasswordHasher<Account>, PasswordHasher<Account>>();
 builder.Services.Configure<PasswordHasherOptions>(o => o.IterationCount = 210_000);
 var keyPath = builder.Configuration["Nexus:DataProtectionPath"] ?? "C:/Nexus/.local/keys";
@@ -144,11 +145,32 @@ app.MapPost("/api/admin/integration-tokens/{tokenId:guid}/revoke", async (Guid t
     await agents.Revoke(tokenId);
     return Results.NoContent();
 });
+app.MapGet("/api/admin/approvals", async (string? status, string? after, int? limit, IApprovalStore approvals, HttpContext context) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(await approvals.List(context.Request.Cookies["nexus.session"], status, after, limit));
+});
+app.MapGet("/api/admin/approvals/{draftId:guid}", async (Guid draftId, IApprovalStore approvals, HttpContext context) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(await approvals.Detail(context.Request.Cookies["nexus.session"], draftId));
+});
+app.MapPost("/api/admin/approvals/{draftId:guid}/decision", async (Guid draftId, DecideDraftRequest request, IApprovalStore approvals, HttpContext context) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(await approvals.Decide(context.Request.Cookies["nexus.session"], draftId, request));
+});
 var integrationsApi = app.MapGroup("/api/integrations").WithMetadata(new IntegrationBearerOnly());
 integrationsApi.MapPost("/drafts", async (ProposeDraftRequest request, IntegrationStore integrations, HttpContext context) =>
-    Results.Ok(await integrations.Propose(context.Request.Headers.Authorization.ToString(), request)));
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(await integrations.Propose(context.Request.Headers.Authorization.ToString(), request));
+});
 integrationsApi.MapGet("/drafts", async (IntegrationStore integrations, HttpContext context) =>
-    Results.Ok(await integrations.Drafts(context.Request.Headers.Authorization.ToString())));
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(await integrations.Drafts(context.Request.Headers.Authorization.ToString()));
+});
 integrationsApi.MapGet("/inbox", async (string? after, int? limit, IntegrationStore integrations, HttpContext context) =>
     Results.Ok(await integrations.Inbox(context.Request.Headers.Authorization.ToString(), after, limit)));
 integrationsApi.MapGet("/me", async (IntegrationStore integrations, HttpContext context) =>

@@ -22,6 +22,13 @@ test('generates private local database configuration once and reuses it',()=>{
  assert.equal(JSON.parse(readFileSync(path.join(root,'.local/runtime.json'),'utf8')).postgresPassword,first.postgresPassword);
 });
 
+test('disposable live harness builds and starts Release without touching locked Debug output',()=>{
+ const runner=readFileSync('scripts/test-live.mjs','utf8');
+ const api=readFileSync('scripts/api.mjs','utf8');
+ assert.match(runner,/'-c','Release'/);
+ assert.match(api,/database\s*\?\s*'Release'\s*:\s*'Debug'/);
+});
+
 test('Vite ignores project-local runtime and tool directories while watching', async()=>{
  const resolved=typeof viteConfig==='function'?await viteConfig({command:'serve',mode:'test',isSsrBuild:false,isPreview:false}):viteConfig;
  const ignored=resolved.server?.watch?.ignored;

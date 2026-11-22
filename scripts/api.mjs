@@ -12,7 +12,8 @@ if(database&&!/^nexus_ui_test_[a-f0-9]{32}$/.test(database))throw new Error('Tes
 const keys=`${root}/.local/${database?`test-keys/${database}`:'keys'}`;
 for(const dir of [keys,`${root}/.local/dotnet-home`,`${root}/.cache/tmp`])mkdirSync(dir,{recursive:true});
 const executable=process.platform==='win32'?`${root}/.tools/dotnet/dotnet.exe`:'dotnet';
-const dll=`${root}/backend/Nexus.Api/bin/Debug/net10.0/Nexus.Api.dll`;
+const configuration=database?'Release':'Debug';
+const dll=`${root}/backend/Nexus.Api/bin/${configuration}/net10.0/Nexus.Api.dll`;
 if(!existsSync(dll))throw new Error('API has not been built. Run npm run setup first.');
 const child=spawn(executable,[dll,'--contentRoot',`${root}/backend/Nexus.Api`],{cwd:root,stdio:'inherit',env:{...process.env,DOTNET_ROOT:`${root}/.tools/dotnet`,DOTNET_CLI_HOME:`${root}/.local/dotnet-home`,DOTNET_CLI_TELEMETRY_OPTOUT:'1',TMP:`${root}/.cache/tmp`,TEMP:`${root}/.cache/tmp`,ASPNETCORE_ENVIRONMENT:'Development',ASPNETCORE_URLS:`http://127.0.0.1:${port}`,ConnectionStrings__Nexus:database?runtime.connectionString.replace('Database=nexus;',`Database=${database};`):runtime.connectionString,Nexus__DataProtectionPath:keys}});
 return child;

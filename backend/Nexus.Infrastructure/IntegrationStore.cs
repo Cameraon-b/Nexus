@@ -40,7 +40,12 @@ public sealed class IntegrationStore(NexusDb db)
     }
 
     public Task<DraftMetadata[]> Drafts(string? authorization) => Authenticated(authorization, async (agent, _) =>
-        (await db.MessageDrafts.AsNoTracking().Where(d => d.AuthorId == agent.Id).OrderBy(d => d.CreatedAt).ThenBy(d => d.Id).ToArrayAsync()).Select(DraftMetadata.From).ToArray());
+        await (from draft in db.MessageDrafts.AsNoTracking()
+               where draft.AuthorId == agent.Id
+               join decision in db.ApprovalDecisions.AsNoTracking() on draft.Id equals decision.DraftId into decisions
+               from decision in decisions.DefaultIfEmpty()
+               orderby draft.CreatedAt, draft.Id
+               select new DraftMetadata(draft.Id, draft.ConversationId, draft.ClientRequestId, draft.SourceMessageId, draft.State, draft.CreatedAt, draft.ResolvedAt, decision == null ? null : decision.DeliveredMessageId)).ToArrayAsync());
 
     public Task<DraftMetadata> Propose(string? authorization, ProposeDraftRequest request) => Authenticated(authorization, async (agent, token) =>
     {
@@ -58,7 +63,8 @@ public sealed class IntegrationStore(NexusDb db)
         if (existing is not null)
         {
             existing.AssertSamePayload(draft);
-            return DraftMetadata.From(existing);
+            var deliveredId = await db.ApprovalDecisions.AsNoTracking().Where(d => d.DraftId == existing.Id).Select(d => d.DeliveredMessageId).SingleOrDefaultAsync();
+            return DraftMetadata.From(existing, deliveredId);
         }
         db.MessageDrafts.Add(draft);
         return DraftMetadata.From(draft);

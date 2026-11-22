@@ -13,7 +13,7 @@ const sql=(query)=>{
 };
 let api,ui,created=false;
 try {
- const build=spawnSync(process.execPath,['scripts/dotnet.mjs','build','backend/Nexus.Api/Nexus.Api.csproj'],{cwd:root,stdio:'inherit'});
+ const build=spawnSync(process.execPath,['scripts/dotnet.mjs','build','backend/Nexus.Api/Nexus.Api.csproj','-c','Release'],{cwd:root,stdio:'inherit'});
  if(build.status!==0)throw new Error('API build failed.');
  sql(`CREATE DATABASE ${database}`);created=true;
  api=startApi({port:'5081',database});

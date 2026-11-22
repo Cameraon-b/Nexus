@@ -3,9 +3,9 @@ using Nexus.Domain;
 namespace Nexus.Application;
 
 public sealed record ProposeDraftRequest(string ConversationId, string? Body, Guid ClientRequestId, Guid? SourceMessageId);
-public sealed record DraftMetadata(Guid Id, string ConversationId, Guid ClientRequestId, Guid? SourceMessageId, string State, DateTimeOffset CreatedAt)
+public sealed record DraftMetadata(Guid Id, string ConversationId, Guid ClientRequestId, Guid? SourceMessageId, string State, DateTimeOffset CreatedAt, DateTimeOffset? ResolvedAt = null, Guid? DeliveredMessageId = null)
 {
-    public static DraftMetadata From(MessageDraft draft) => new(draft.Id, draft.ConversationId, draft.ClientRequestId, draft.SourceMessageId, draft.State, draft.CreatedAt);
+    public static DraftMetadata From(MessageDraft draft, Guid? deliveredMessageId = null) => new(draft.Id, draft.ConversationId, draft.ClientRequestId, draft.SourceMessageId, draft.State, draft.CreatedAt, draft.ResolvedAt, deliveredMessageId);
 }
 public sealed record IntegrationInboxPage(MessageDto[] Messages, string? NextCursor);
 public sealed record CreateAgentRequest(string? DisplayName, string? Description, string? TokenLabel);

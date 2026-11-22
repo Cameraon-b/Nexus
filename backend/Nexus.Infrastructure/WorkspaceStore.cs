@@ -34,6 +34,8 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         var message = Message.Deliver(conversationId, authorId, request.Body, request.ClientRequestId);
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AcquireAuthorRequestLock(authorId, request.ClientRequestId);
+        if (await db.ApprovalDecisions.AnyAsync(d => d.ReviewerParticipantId == authorId && d.ClientRequestId == request.ClientRequestId))
+            throw new RuleViolation(409, "clientRequestId was already used for a decision.");
         if (await db.MessageDrafts.AnyAsync(d => d.AuthorId == authorId && d.ClientRequestId == request.ClientRequestId))
             throw new RuleViolation(409, "clientRequestId was already used for a draft.");
         if (await db.Conversations.AnyAsync(c => c.CreatedByParticipantId == authorId && c.ClientRequestId == request.ClientRequestId))
@@ -57,6 +59,8 @@ public sealed class WorkspaceStore(NexusDb db) : IWorkspaceStore
         await using var transaction = await db.Database.BeginTransactionAsync();
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({PublicMembershipLock})");
         await AcquireAuthorRequestLock(creatorId, request.ClientRequestId);
+        if (await db.ApprovalDecisions.AnyAsync(d => d.ReviewerParticipantId == creatorId && d.ClientRequestId == request.ClientRequestId))
+            throw new RuleViolation(409, "clientRequestId was already used for a decision.");
         if (await db.MessageDrafts.AnyAsync(d => d.AuthorId == creatorId && d.ClientRequestId == request.ClientRequestId))
             throw new RuleViolation(409, "clientRequestId was already used for a draft.");
         var existing = await db.Conversations.SingleOrDefaultAsync(c => c.CreatedByParticipantId == creatorId && c.ClientRequestId == request.ClientRequestId);

@@ -5,6 +5,7 @@ namespace Nexus.Infrastructure;
 
 public sealed class NexusDb(DbContextOptions<NexusDb> options) : DbContext(options)
 {
+    public DbSet<ApprovalDecision> ApprovalDecisions => Set<ApprovalDecision>();
     public DbSet<InboxCursor> InboxCursors => Set<InboxCursor>();
     public DbSet<MessageDraft> MessageDrafts => Set<MessageDraft>();
     public DbSet<Message> Messages => Set<Message>();
@@ -16,6 +17,25 @@ public sealed class NexusDb(DbContextOptions<NexusDb> options) : DbContext(optio
     public DbSet<IntegrationToken> IntegrationTokens => Set<IntegrationToken>();
     protected override void OnModelCreating(ModelBuilder b)
     {
+        b.Entity<ApprovalDecision>().HasIndex(d => d.DraftId).IsUnique();
+        b.Entity<ApprovalDecision>().HasIndex(d => new { d.ReviewerParticipantId, d.ClientRequestId }).IsUnique();
+        b.Entity<ApprovalDecision>().HasIndex(d => d.DeliveredMessageId).IsUnique();
+        b.Entity<ApprovalDecision>().HasOne<MessageDraft>().WithMany().HasForeignKey(d => d.DraftId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ApprovalDecision>().HasOne<Participant>().WithMany().HasForeignKey(d => d.ReviewerParticipantId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ApprovalDecision>().HasOne(d => d.DeliveredMessage).WithMany().HasForeignKey(d => d.DeliveredMessageId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ApprovalDecision>().Property(d => d.Outcome).HasMaxLength(20);
+        b.Entity<ApprovalDecision>().Property(d => d.FinalBody).HasMaxLength(5000);
+        b.Entity<ApprovalDecision>().Property(d => d.Reason).HasMaxLength(ApprovalDecision.ReasonLimit);
+        b.Entity<ApprovalDecision>().ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_ApprovalDecisions_Shape", "(\"Outcome\" IN ('approved','approved_with_edits') AND \"FinalBody\" IS NOT NULL AND \"DeliveredMessageId\" IS NOT NULL) OR (\"Outcome\" = 'rejected' AND \"FinalBody\" IS NULL AND \"DeliveredMessageId\" IS NULL)");
+            t.HasCheckConstraint("CK_ApprovalDecisions_Body", "\"FinalBody\" IS NULL OR (length(btrim(\"FinalBody\")) BETWEEN 1 AND 5000 AND \"FinalBody\" = btrim(\"FinalBody\"))");
+            t.HasCheckConstraint("CK_ApprovalDecisions_Reason", "\"Reason\" IS NULL OR (length(btrim(\"Reason\")) BETWEEN 1 AND 1000 AND \"Reason\" = btrim(\"Reason\"))");
+            t.HasCheckConstraint("CK_ApprovalDecisions_Request", "\"ClientRequestId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
+        });
+        b.Entity<Message>().HasIndex(m => m.SourceDraftId).IsUnique();
+        b.Entity<Message>().HasOne<MessageDraft>().WithMany().HasForeignKey(m => m.SourceDraftId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<Message>().ToTable(t => t.HasCheckConstraint("CK_Messages_EditedLineage", "NOT \"EditedBeforeRelease\" OR \"SourceDraftId\" IS NOT NULL"));
         b.Entity<InboxCursor>().HasIndex(c => new { c.ParticipantId, c.MessageId }).IsUnique();
         b.Entity<InboxCursor>().HasOne<Participant>().WithMany().HasForeignKey(c => c.ParticipantId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<MessageDraft>().HasIndex(d => new { d.AuthorId, d.ClientRequestId }).IsUnique();
@@ -27,7 +47,7 @@ public sealed class NexusDb(DbContextOptions<NexusDb> options) : DbContext(optio
         b.Entity<MessageDraft>().Property(d => d.State).HasMaxLength(20);
         b.Entity<MessageDraft>().ToTable(t =>
         {
-            t.HasCheckConstraint("CK_MessageDrafts_State", "\"State\" = 'pending'");
+            t.HasCheckConstraint("CK_MessageDrafts_State", "(\"State\" = 'pending' AND \"ResolvedAt\" IS NULL) OR (\"State\" IN ('approved','approved_with_edits','rejected') AND \"ResolvedAt\" IS NOT NULL)");
             t.HasCheckConstraint("CK_MessageDrafts_Body", "length(btrim(\"Body\")) BETWEEN 1 AND 5000 AND \"Body\" = btrim(\"Body\")");
             t.HasCheckConstraint("CK_MessageDrafts_Request", "\"ClientRequestId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
         });

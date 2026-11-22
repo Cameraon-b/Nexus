@@ -15,9 +15,9 @@ public sealed record CreateDirectConversationRequest(Guid ParticipantId);
 public sealed record PostMessageRequest(string Body, Guid ClientRequestId);
 public sealed record CreateTopicalConversationRequest(string Title, string Description, string OpeningMessage, Guid ClientRequestId);
 public sealed record CreateTopicalConversationResponse(ConversationDto Conversation, MessageDto OpeningMessage);
-public sealed record MessageDto(Guid Id, string ConversationId, Guid AuthorId, string Body, string State, DateTimeOffset CreatedAt)
+public sealed record MessageDto(Guid Id, string ConversationId, Guid AuthorId, string Body, string State, DateTimeOffset CreatedAt, bool ApprovedThroughReview = false, bool EditedBeforeRelease = false)
 {
-    public static MessageDto From(Message m) => new(m.Id, m.ConversationId, m.AuthorId, m.Body, m.State, m.CreatedAt);
+    public static MessageDto From(Message m) => new(m.Id, m.ConversationId, m.AuthorId, m.Body, m.State, m.CreatedAt, m.SourceDraftId is not null, m.EditedBeforeRelease);
 }
 public interface IWorkspaceStore
 {

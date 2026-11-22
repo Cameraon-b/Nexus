@@ -27,7 +27,7 @@ On first visit, create your own administrator account (display name, email, pass
 - Successful home snapshots reconcile authoritatively; removed/denied conversations lose their private caches and selection. Locally successful creates survive stale polls until observed by a later snapshot
 - The prototype's sage/dark shell, participant-first layout and mobile treatment
 
-**Still to build:** invitations or closed registration policy, group and agent–agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, presence, encryption features, topic archiving, production connector installations, approval/release governance backed by the server, password recovery, and deployment on Nora. Governance remains marked as coming next. `/demo` still offers broader sample flows for design iteration; nothing there is connected to the real database. Registration is intended only for this loopback local-development workspace; this is not a hardened production/LAN release.
+**Still to build:** invitations or closed registration policy, group and agent–agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, presence, encryption features, topic archiving, production connector installations, password recovery, and deployment on Nora. `/demo` still offers broader sample flows for design iteration; nothing there is connected to the real database. Registration is intended only for this loopback local-development workspace; this is not a hardened production/LAN release.
 
 ## Sprint 6 — agent connections and pending replies
 
@@ -35,9 +35,19 @@ Workspace admins can **Manage agents**: create an agent, copy its one-time integ
 
 Active agents appear in ordinary Direct Message recipients with AGENT labels, honest availability and duplicate-name disambiguation. Unknown/offline availability does not prevent durable human messages. New agents join Main and active public Topics, including future Topics. Successful bearer activity marks availability `available` and records last use; no offline-aging scheduler is implemented, so availability is not a continuous-presence guarantee.
 
-The bearer-only integration API supports `/me`, bounded chronological `/inbox` polling with participant-scoped server cursors, and retry-safe pending `/drafts`. Cookies never authenticate integration requests; bearer tokens never authenticate human/admin routes. Human/admin writes retain CSRF. Drafts never become delivered messages in Sprint 6: ordinary Home/history receives no draft content, and admins see counts only. Revocation blocks subsequent integration requests immediately. See `backend/README.md` for contracts.
+The bearer-only integration API supports `/me`, bounded chronological `/inbox` polling with participant-scoped server cursors, and retry-safe pending `/drafts`. Cookies never authenticate integration requests; bearer tokens never authenticate human/admin routes. Human/admin writes retain CSRF. Drafts remain separate from ordinary Home/history until an active human admin approves release through the Sprint 7 Review queue. Revocation blocks subsequent integration requests immediately. See `backend/README.md` for contracts.
 
-**Deferred:** approval/release/rejection, automatic publishing, agent–agent DMs, services and moderation workflows, webhooks, external connector installation and production hardening. `/demo` remains browser-local sample functionality. The real database has not been migrated and no Hermes/OpenClaw installation has been configured; migrations and the reference connector acceptance journey run only against disposable databases.
+**Deferred:** automatic publishing, agent–agent DMs, services and moderation workflows, webhooks, external connector installation and production hardening. `/demo` remains browser-local sample functionality. The Sprint 7 migration has not been applied to the real database and no Hermes/OpenClaw installation has been configured; migrations and the reference connector acceptance journey run only against disposable databases.
+
+## Sprint 7 — Review queue and governed release
+
+Active human admins can open **Review queue** with a pending badge, inspect the original proposal, canonical recipients, source and up to 20 delivered context messages, edit the final wording, approve unchanged/with edits, or confirm rejection with an optional private reason. Desktop uses list/detail panels; mobile has explicit Back navigation. Bounded history retains original/final wording, reviewer, time, destination and outcome. No review content is stored in localStorage.
+
+Approval atomically records one immutable decision and at most one delivered message authored by the original agent. Rejection publishes nothing. Current reviewer authority and agent/destination/access are rechecked under database locks. Exact retries are stable; changed requests and competing decisions conflict without republishing. The UI refreshes authoritative state on conflict and invalidates stale queue/detail/history requests. Ordinary users receive no review navigation, proposals, reviewer or private reason. Released timelines show approval lineage; edited releases explicitly say **Admin-edited before release · agent-authored**. Agents can poll only their own terminal state, resolution time and delivered message ID, including after token replacement; revocation immediately denies access.
+
+Admin routes: `GET /api/admin/approvals`, `GET /api/admin/approvals/{draftId}`, and cookie+CSRF `POST /api/admin/approvals/{draftId}/decision`. See `backend/README.md` for payloads, pagination and lock ordering. `/demo` remains a separate simulation, not this workflow.
+
+**Deployment warning:** startup auto-migrates. Do not start/restart this worktree against the real `nexus` database before independent review, backup and approved migration. The new journey is verified only against uniquely named disposable databases; the real pending draft remains untouched.
 
 ## Local data and secrets
 
@@ -80,7 +90,7 @@ On a fresh Windows checkout: install Node and Docker Desktop, run `npm ci`, then
 
 - `backend/Nexus.slnx`: Api, Application, Domain, Infrastructure and Tests
 - `backend/README.md`: API contract, session rules, migrations and limitations
-- `src/LiveWorkspace.tsx`, `src/PersistentWorkspace.tsx`, `src/ManageAgents.tsx`, `src/live-api.ts`: real authentication, conversation/admin UI and cookie+CSRF API client
+- `src/LiveWorkspace.tsx`, `src/PersistentWorkspace.tsx`, `src/ManageAgents.tsx`, `src/ReviewQueue.tsx`, `src/live-api.ts`: real authentication, conversation/admin UI and cookie+CSRF API client
 - `src/App.tsx`, `src/domain.ts`: retained sample prototype
 - `compose.yaml`: digest-pinned PostgreSQL image with project-local data
 - `docs/`: original design PDFs and extracted specifications

@@ -10,7 +10,45 @@ ASP.NET Core / .NET 10 with PostgreSQL persistence. All projects target `net10.0
 - `Nexus.Infrastructure`: EF Core/Npgsql mappings, migrations, transactional implementations, Identity password hashing and opaque sessions.
 - `Nexus.Tests`: real PostgreSQL integration tests through fresh ASP.NET hosts; no in-memory database provider.
 
+## Sprint 7 — human-governed agent delivery
+
+The real `/` workspace now provides an admin-only Review queue, contextual detail, unchanged/edited approval, rejection and bounded history. `/demo` remains a separate browser-local simulation. This worktree's migration has **not** been applied to the real database; independent backup/review/deployment is still required.
+
+The unapplied `ApprovalGovernance` migration adds immutable `ApprovalDecision` records, terminal draft states/resolution time, and unique agent-message draft lineage with an edited-before-release flag. The draft's original proposal never changes. Decisions retain the separate reviewer, request UUID, final content, optional normalized private note (maximum **1000 characters**), resolution timestamp and delivered-message ID. Draft resolution time supports outcome display without copying the full audit record onto the draft; queue/history pagination uses immutable submission order.
+
+Restrictive foreign keys and unique indexes enforce one decision/message per draft. Shape checks and deferred PostgreSQL constraint triggers require a coherent draft/decision/release at commit, including agent authorship, destination, final wording and edited status. Triggers prevent changing proposal fields, terminal drafts, decisions and released messages. Domain resolution is **not an authorization or transaction service**. `IApprovalStore`/`ApprovalStore` wraps it in cookie-resolved active-human-admin authorization, durable locks, current delivery checks and one atomic transaction. Rejection remains possible after delivery authorization disappears.
+
+Up adds schema without updating existing drafts. Down drops governance guards/decisions, strips message lineage while retaining delivered messages, and deletes only terminal Sprint 7 drafts before restoring the pending-only constraint. Pre-existing pending drafts and their original fields are preserved. Downgrade intentionally loses governance history; take a backup before any independently approved deployment.
+
+Decision lock order: sorted author/request advisory keys for reviewer and agent → durable draft row `FOR UPDATE` → reviewer account `FOR SHARE` → involved participants in PostgreSQL UUID order `FOR SHARE` → destination `FOR SHARE` → public author membership `FOR SHARE`. Reload and recheck after waiting. No setup/public-membership/direct-pair/integration-agent advisory lock is taken; token lifetime intentionally does not determine delivery eligibility. Existing direct creation also locks participants in UUID order before conversation writes. Row SHARE locks hold authority, current author/peer eligibility, destination and access stable until commit, including against noncooperating row writers. All writes (terminal draft, decision, agent-authored release) commit or roll back together. Deferred constraints enforce cross-row lineage.
+
+Exact reviewer/request/payload retries return the persisted result, including PostgreSQL timestamp precision. Changed payload, a different terminal decision, or cross-operation UUID reuse conflicts with 409. Reviewer request IDs share the human message/topic namespace; release IDs also occupy the agent message namespace. Unique draft/decision/message indexes remain the final guard.
+
+Focused verification uses disposable PostgreSQL only:
+
+```text
+npm run test:backend -- -c Release --filter FullyQualifiedName~Approval
+```
+
+Approval tests cover domain/persistence/migration Up/Down, API authority/CSRF/privacy, deterministic pagination, retries, same/opposite concurrent decisions, current-state races, rollback and minimal outcome/lineage DTOs. Intercepted browser tests cover desktop/mobile review, stale responses, confirmation/focus, validation, conflict reconciliation and expiry. `live-s7-approvals.spec.ts` exercises the three-context journey against disposable PostgreSQL/API5081/UI5176. Evidence and process deviations are in ignored `artifacts/s7/STATUS.md`.
+
+### Approval HTTP contract
+
+All routes require an active human admin cookie; bearer-only access is denied. All responses are `no-store`. Unsafe decisions retain CSRF.
+
+| Method | Path | Contract |
+|---|---|---|
+| GET | `/api/admin/approvals?status=pending&after=&limit=25` | `{items:[{draft,agent,destination}],nextCursor,pendingCount}`; status `pending` (default) or `resolved`, limit 1–100 |
+| GET | `/api/admin/approvals/{draftId}` | `{draft,agent,destination,recipients,sourceMessage,context,decision,reviewer}` |
+| POST | `/api/admin/approvals/{draftId}/decision` | `{outcome,finalBody?,reason?,clientRequestId}` → immutable decision DTO |
+
+Queue and history order ascending by immutable `(CreatedAt,Id)` with opaque UUID boundary handles. A cursor retains its submission position if a pending row resolves. Detail recipients use the canonical pair for DMs; context includes at most 20 recent delivered messages in the selected destination, plus the optional source. Governance visibility never grants ordinary conversation membership. Reviewer/private reason appear only in these admin contracts.
+
+Outcomes are `approved`, `approved_with_edits`, `rejected`. Unchanged approval may omit finalBody; edits require different normalized wording of 1–5000 characters; rejection must omit finalBody. Private reason is optional, trimmed, maximum 1000 characters. Terminal decisions cannot be changed. Ordinary Message DTOs add only `approvedThroughReview` and `editedBeforeRelease` booleans, preserving agent authorship and existing fields. Edited timeline wording is **Admin-edited before release · agent-authored**. Pending/rejected proposals never enter Home/history.
+
 ## Start
+
+**Do not restart the API against the real `nexus` database from this worktree:** startup automatically applies migrations. Sprint 7 real-data migration is reserved for independent backup/review/verification; use uniquely named disposable test databases for this work-in-progress.
 
 Run from `C:/Nexus` with the parent's local CLI wrapper:
 
@@ -78,7 +116,7 @@ Workspace Home DTO:
 Message DTO:
 
 ```text
-{id:UUID,conversationId:string,authorId:UUID,body:string,state:'delivered',createdAt:ISO8601}
+{id:UUID,conversationId:string,authorId:UUID,body:string,state:'delivered',createdAt:ISO8601,approvedThroughReview:boolean,editedBeforeRelease:boolean}
 ```
 
 Topical creation trims title, description, and opening message. Title is 1–80 characters, description 0–160, opening message 1–5000, and clientRequestId must be a nonzero UUID. Creation atomically writes the topical conversation, memberships for every active participant, and its opening message. Idempotency is per creator/clientRequestId: an identical normalized retry returns the original conversation and opening message, while changed content or reuse by the message endpoint returns 409. Registration joins the new human to Main and every active public topical conversation under the same transaction-level public-membership lock used by topical creation.
@@ -130,7 +168,7 @@ Only explicitly mapped integration endpoints are CSRF-exempt; every integration 
 
 Inbox authorization requires current active eligibility and either a canonical own Direct pair or a Main/Topic membership. Arbitrary private memberships never grant access. Only delivered, nonself-authored Messages are returned, ordered by `(CreatedAt,Id)` with PostgreSQL UUID tie ordering. Default page size is 50, allowed range 1–100; invalid limits are 400. Opaque cursor handles are server-generated UUIDs persisted per participant/boundary-message with a unique index, making repeated next cursors deterministic and independent of token replacement. Each boundary is resolved again against current authorization; malformed, foreign, deleted or inaccessible boundaries return generic 400. A cursor is not an authorization grant. There is at most one cursor row per participant/message boundary; no acknowledgement protocol or retention/cleanup job is implemented.
 
-Drafts trim body to the same 1–5000 UTF-16-unit limits and require a nonzero request UUID. Optional source must be delivered in the same currently visible conversation. Author, submitting token and pending state are server-derived. Drafts persist separately from Messages and have no approval/release endpoint. DraftMetadata is `{id,conversationId,clientRequestId,sourceMessageId,state:'pending',createdAt}`. Human Home/history never queries MessageDrafts; admin lists aggregate pending counts only. Same agent/request UUID and identical normalized conversation/body/source return the original draft even after token replacement; changed payload or collisions with Message/Topic operations are 409. Another agent has an independent UUID namespace. Concurrency uses the shared author/request lock and unique draft index.
+Drafts trim body to the same 1–5000 UTF-16-unit limits and require a nonzero request UUID. Optional source must be delivered in the same currently visible conversation. Author, submitting token and pending state are server-derived. Drafts persist separately from Messages. DraftMetadata is `{id,conversationId,clientRequestId,sourceMessageId,state,createdAt,resolvedAt,deliveredMessageId}`; resolution fields are nullable. The own-draft listing includes terminal outcomes and delivered ID, never body, reviewer or private reason. Replacement tokens for the same participant retain this history; revoked tokens immediately lose access. Human Home/history never queries MessageDrafts; review bodies are restricted to admin approval routes. Same agent/request UUID and identical normalized conversation/body/source return the original draft even after token replacement; changed payload or collisions with Message/Topic operations are 409. Another agent has an independent UUID namespace. Concurrency uses the shared author/request lock and unique draft index.
 
 Full advisory lock graph: setup → public-membership → author/request for human setup/public operations; Direct create/reopen takes only canonical-pair; human message sends take only author/request; agent creation takes public-membership only; token/auth/inbox/list operations take agent only; draft submission takes agent → author/request. No path acquires setup/public/pair after agent or agent after author/request. Pair participant-row fences remain UUID ordered. Mixed-contention and request/revocation boundary tests use disposable PostgreSQL and explicit completion gates.
 
@@ -143,10 +181,10 @@ node scripts/test-backend.mjs --filter FullyQualifiedName~IntegrationTokenTests
 node scripts/test-backend.mjs --filter FullyQualifiedName~One_time_token_responses
 ```
 
-Additional focused suites: `HumanAgentDirectTests`, `IntegrationInboxTests`, `IntegrationDraftTests`, `IntegrationRaceTests` and `AgentMigrationTests`. The real admin UI provides accessible create/reveal/confirmation dialogs, metadata and pending counts; raw tokens are memory-only and removed on dismissal/reload. Disposable live acceptance covers admin browser creation, ordinary human agent DM, bearer polling/draft submission, direct PostgreSQL hash/pending/no-publication assertions, count-only admin visibility and immediate revocation. The existing human-human live journey remains included. The real `nexus` database remains at six migrations. No external connector was configured.
+Additional focused suites: `HumanAgentDirectTests`, `IntegrationInboxTests`, `IntegrationDraftTests`, `IntegrationRaceTests` and `AgentMigrationTests`. The real admin UI provides accessible create/reveal/confirmation dialogs, metadata and pending counts; raw tokens are memory-only and removed on dismissal/reload. Disposable live acceptance covers admin browser creation, ordinary human agent DM, bearer polling/draft submission, direct PostgreSQL hash/pending/no-publication assertions, count-only admin visibility and immediate revocation. The existing human-human live journey remains included. No external connector was configured. Sprint 7 work has not applied migrations to the real `nexus` database.
 
 ## Scope and caveats
 
-This is the local conversation/agent-boundary slice, not the full approved MVP. Open local registration, permanent Main, public Topics, human-human/human-agent DMs, integration inbox and pending-only drafts are supported. Group/agent-agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, continuous presence, encryption features, approval/release governance, invitations, password reset, MFA, external connector deployment, moderation, services and SignalR/webhooks are deferred. Human history and own draft-metadata reads currently return all rows; integration inbox alone is paginated. No default account exists.
+This is the local conversation/agent-boundary slice, not the full approved MVP. Open local registration, permanent Main, public Topics, human-human/human-agent DMs, integration inbox, pending drafts and admin-reviewed release/rejection are supported. Group/agent-agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, continuous presence, encryption features, invitations, password reset, MFA, external connector deployment, moderation, services and SignalR/webhooks are deferred. Human history and own draft-metadata reads currently return all rows; integration inbox and admin approval queue/history are paginated. No default account exists.
 
 Local-prototype migration-at-startup requires schema privileges. Production rollout should separately apply reviewed migrations and restrict app DB privileges. Rate counters are process-local and reset on restart; a shared-IP reverse proxy shares the limit unless deliberately configured otherwise. There is no session-row cleanup job or sliding renewal. Protect runtime credentials and data-protection key files with filesystem permissions; key files are not explicitly encrypted at rest. Use TLS and an appropriately secured reverse proxy outside local development.
