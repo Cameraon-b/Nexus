@@ -8,7 +8,7 @@ async function setup(page:Page,admin=true){
  let resolved=false;let state='approved';let posts=0;
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:{id:'account',participantId:'human',displayName:'Admin',isAdmin:admin}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'csrf'}});
   if(path.endsWith('/home'))return route.fulfill({json:{participants:[human,agent],conversation:{...destination,id:'main',title:'Main',kind:'main'},conversations:[],messages:[{id:'released',authorId:'agent',body:'Old released message',createdAt:'2026-01-01T00:00:00Z',approvedThroughReview:true,editedBeforeRelease:true}]}});

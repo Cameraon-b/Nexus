@@ -19,10 +19,19 @@ public sealed class ApiHost(string? connection = null, string? keys = null, stri
         .ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:Nexus"] = connection ?? "Host=127.0.0.1;Port=55432;Username=nexus;Database=nexus_test_placeholder",
-            ["Nexus:DataProtectionPath"] = keys ?? "C:/Nexus/backend/.test-keys"
+            ["Nexus:DataProtectionPath"] = keys ?? "C:/Nexus/backend/.test-keys",
+            ["AllowedHosts"] = "localhost;nexus.aether.lab",
+            ["Nexus:TrustedProxies"] = "127.0.0.1"
         }))
         .ConfigureServices(services =>
         {
+            var testKeys = Path.GetFullPath(keys ?? "C:/Nexus/backend/.test-keys");
+            var testRoot = Path.GetFullPath("C:/Nexus/backend/.test-keys");
+            if (testKeys != testRoot && !testKeys.StartsWith(testRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Test keys must remain under backend/.test-keys.");
+            services.PostConfigure<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>(options =>
+                options.XmlRepository = new Microsoft.AspNetCore.DataProtection.Repositories.FileSystemXmlRepository(
+                    new DirectoryInfo(testKeys), Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance));
             if (interceptor is null) return;
             services.RemoveAll<NexusDb>();
             services.RemoveAll<DbContextOptions<NexusDb>>();

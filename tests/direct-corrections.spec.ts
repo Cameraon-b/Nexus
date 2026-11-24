@@ -6,7 +6,7 @@ const dm2={...dm,id:'dm2',participantIds:['self',people[2].id]};
 async function setup(page:Page,{home,history,post,duplicates=false,directory=people}:{directory?:typeof people;home:()=>Promise<any>|any;history?:()=>number;post?:(body:any)=>any;duplicates?:boolean}){
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:{id:'account',participantId:'self',displayName:'Alice',email:'a@example.test',isAdmin:true}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'test'}});
   if(path.endsWith('/home'))return route.fulfill({json:{participants:duplicates?directory:directory.filter(p=>p.id!==people[2].id),conversation:main,messages:[],conversations:await home()}});

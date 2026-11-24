@@ -8,7 +8,47 @@ using Nexus.Application;
 using Nexus.Domain;
 using Nexus.Infrastructure;
 
+if (args.Contains("--healthcheck", StringComparer.Ordinal))
+{
+    try
+    {
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, "http://127.0.0.1:8080/health/ready");
+        request.Headers.Host = Environment.GetEnvironmentVariable("AllowedHosts")?.Split(';')[0] ?? "localhost";
+        var response = await client.SendAsync(request);
+        Environment.ExitCode = response.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch { Environment.ExitCode = 1; }
+    return;
+}
+var migrateOnly = args.Contains("--migrate-only", StringComparer.Ordinal);
 var builder = WebApplication.CreateBuilder(args);
+if (migrateOnly) builder.Logging.ClearProviders();
+var passwordFile = builder.Configuration["Nexus:DatabasePasswordFile"];
+if (passwordFile is not null)
+{
+    try
+    {
+        var password = File.ReadAllText(passwordFile).TrimEnd('\r', '\n');
+        if (string.IsNullOrWhiteSpace(password)) throw new InvalidOperationException();
+        builder.Configuration["ConnectionStrings:Nexus"] = new Npgsql.NpgsqlConnectionStringBuilder
+        {
+            Host = builder.Configuration["Nexus:DatabaseHost"] ?? "postgres",
+            Database = "nexus",
+            Username = "nexus",
+            Password = password,
+            // The file-secret bundle uses password authentication, not Kerberos.
+            GssEncryptionMode = Npgsql.GssEncryptionMode.Disable,
+            IncludeErrorDetail = false
+        }.ConnectionString;
+    }
+    catch
+    {
+        Console.Error.WriteLine("Database secret is missing or invalid.");
+        Environment.ExitCode = 1;
+        return;
+    }
+}
 builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddDbContext<NexusDb>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Nexus") ?? throw new InvalidOperationException("ConnectionStrings:Nexus is required.")));
 builder.Services.AddScoped<IIdentityStore, IdentityStore>();
@@ -18,9 +58,16 @@ builder.Services.AddScoped<IntegrationStore>();
 builder.Services.AddScoped<IApprovalStore, ApprovalStore>();
 builder.Services.AddScoped<IPasswordHasher<Account>, PasswordHasher<Account>>();
 builder.Services.Configure<PasswordHasherOptions>(o => o.IterationCount = 210_000);
-var keyPath = builder.Configuration["Nexus:DataProtectionPath"] ?? "C:/Nexus/.local/keys";
-if (!Path.IsPathFullyQualified(keyPath)) throw new InvalidOperationException("Nexus:DataProtectionPath must be absolute.");
-builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyPath)).SetApplicationName("Nexus");
+builder.Services.AddDataProtection().SetApplicationName("Nexus");
+builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+    .Configure<IConfiguration, Microsoft.Extensions.Hosting.IHostEnvironment>((options, configuration, environment) =>
+    {
+        var keyPath = configuration["Nexus:DataProtectionPath"]
+            ?? (environment.IsDevelopment() ? "C:/Nexus/.local/keys" : throw new InvalidOperationException("Nexus:DataProtectionPath is required."));
+        if (!Path.IsPathFullyQualified(keyPath)) throw new InvalidOperationException("Nexus:DataProtectionPath must be absolute.");
+        options.XmlRepository = new Microsoft.AspNetCore.DataProtection.Repositories.FileSystemXmlRepository(
+            new DirectoryInfo(keyPath), Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+    });
 builder.Services.AddAntiforgery(o => { o.HeaderName = "X-CSRF-TOKEN"; o.Cookie.Name = "nexus.csrf"; o.Cookie.SameSite = SameSiteMode.Strict; o.Cookie.HttpOnly = true; o.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.None : CookieSecurePolicy.Always; });
 builder.Services.AddRateLimiter(options =>
 {
@@ -32,7 +79,70 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 var app = builder.Build();
-await using (var scope = app.Services.CreateAsyncScope()) await scope.ServiceProvider.GetRequiredService<NexusDb>().Database.MigrateAsync();
+if (migrateOnly)
+{
+    try
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<NexusDb>().Database.MigrateAsync();
+    }
+    catch (Exception)
+    {
+        Console.Error.WriteLine("Migration failed. Check database configuration and availability.");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+if (!app.Environment.IsDevelopment())
+{
+    var keyPath = app.Configuration["Nexus:DataProtectionPath"];
+    if (keyPath is null || !Path.IsPathFullyQualified(keyPath))
+        throw new InvalidOperationException("Nexus:DataProtectionPath must be absolute.");
+    var probe = Path.Combine(keyPath, ".nexus-probe-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        Directory.CreateDirectory(keyPath);
+        using var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
+    }
+    catch { throw new InvalidOperationException("Data-protection key repository is unavailable."); }
+    var hosts = app.Configuration["AllowedHosts"];
+    if (string.IsNullOrWhiteSpace(hosts) || hosts.Split(';').Any(h => string.IsNullOrWhiteSpace(h) || h.Contains('*') || Uri.CheckHostName(h) == UriHostNameType.Unknown))
+        throw new InvalidOperationException("AllowedHosts must contain explicit production hosts.");
+    var proxies = app.Configuration["Nexus:TrustedProxies"];
+    if (string.IsNullOrWhiteSpace(proxies)) throw new InvalidOperationException("Nexus:TrustedProxies is required.");
+    var forwarding = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+    {
+        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto,
+        ForwardLimit = 2
+    };
+    forwarding.KnownProxies.Clear();
+    forwarding.KnownIPNetworks.Clear();
+    foreach (var entry in proxies.Split(';'))
+    {
+        if (System.Net.IPAddress.TryParse(entry, out var ip) && LocalProxy(ip, null)) forwarding.KnownProxies.Add(ip);
+        else if (System.Net.IPNetwork.TryParse(entry, out var network) && LocalProxy(network.BaseAddress, network.PrefixLength)) forwarding.KnownIPNetworks.Add(network);
+        else throw new InvalidOperationException("Nexus:TrustedProxies must contain valid IP addresses or non-global CIDR networks.");
+    }
+    app.UseForwardedHeaders(forwarding);
+}
+var registrationSetting = app.Configuration["Nexus:AllowPublicRegistration"];
+if (registrationSetting is not null && !bool.TryParse(registrationSetting, out _))
+    throw new InvalidOperationException("Nexus:AllowPublicRegistration must be true or false.");
+var registrationEnabled = registrationSetting is null ? app.Environment.IsDevelopment() : bool.Parse(registrationSetting);
+if (app.Environment.IsDevelopment())
+    await using (var scope = app.Services.CreateAsyncScope()) await scope.ServiceProvider.GetRequiredService<NexusDb>().Database.MigrateAsync();
+app.MapGet("/health/live", () => Results.Json(new { status = "alive" }));
+app.MapGet("/health/ready", async (NexusDb db, HttpContext context) =>
+{
+    try
+    {
+        if (await db.Database.CanConnectAsync(context.RequestAborted)
+            && !(await db.Database.GetPendingMigrationsAsync(context.RequestAborted)).Any())
+            return Results.Json(new { status = "ready" });
+    }
+    catch (Exception) { /* Deliberately narrow health output; no provider diagnostics. */ }
+    return Results.Json(new { status = "unready" }, statusCode: 503);
+});
 app.Use(async (context, next) =>
 {
     try
@@ -52,7 +162,11 @@ app.Use(async (context, next) =>
     }
 });
 app.UseRateLimiter();
-app.MapGet("/api/auth/status", async (IIdentityStore store) => Results.Ok(new { requiresBootstrap = await store.RequiresBootstrap() }));
+app.MapGet("/api/auth/status", async (IIdentityStore store) =>
+{
+    var requiresBootstrap = await store.RequiresBootstrap();
+    return Results.Ok(new { requiresBootstrap, registrationAvailable = !requiresBootstrap && registrationEnabled });
+});
 app.MapGet("/api/auth/csrf", (HttpContext context, IAntiforgery csrf) => Results.Ok(new { token = csrf.GetAndStoreTokens(context).RequestToken }));
 app.MapPost("/api/auth/bootstrap", async (BootstrapRequest request, IIdentityStore store, HttpContext context) =>
 {
@@ -61,7 +175,9 @@ app.MapPost("/api/auth/bootstrap", async (BootstrapRequest request, IIdentitySto
     return Results.Ok(result.User);
 }).RequireRateLimiting("auth");
 
-app.MapPost("/api/auth/register", async (RegisterRequest request, IIdentityStore store, HttpContext context) =>
+if (!registrationEnabled)
+    app.MapPost("/api/auth/register", () => Results.Problem(statusCode: 403, title: "Public registration is unavailable.")).RequireRateLimiting("auth");
+else app.MapPost("/api/auth/register", async (RegisterRequest request, IIdentityStore store, HttpContext context) =>
 {
     var result = await store.Register(request);
     context.Response.Cookies.Append("nexus.session", result.Token, new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = !app.Environment.IsDevelopment(), Expires = result.ExpiresAt, Path = "/" });
@@ -187,6 +303,12 @@ async ValueTask<object?> RequireHumanWorkspace(EndpointFilterInvocationContext i
     if (!await db.Participants.AnyAsync(p => p.Id == user.ParticipantId && p.Kind == "human" && p.State == "active"))
         throw new RuleViolation(403, "Active human participant required.");
     return await next(invocation);
+}
+
+static bool LocalProxy(System.Net.IPAddress address, int? prefix)
+{
+    var ranges = new[] { "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10" };
+    return ranges.Select(System.Net.IPNetwork.Parse).Any(n => n.BaseAddress.AddressFamily == address.AddressFamily && n.Contains(address) && (prefix is null || prefix >= n.PrefixLength));
 }
 
 app.Run();

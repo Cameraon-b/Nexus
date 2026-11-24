@@ -6,7 +6,7 @@ const snapshot=(state='active',pendingCount=2,id='token')=>[{agent,tokens:[{...t
 async function setup(page:Page,clock=false,open=true){
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:{id:'account',participantId:human.id,displayName:'Alex',isAdmin:true}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'csrf'}});
   if(path.endsWith('/home'))return route.fulfill({json:{participants:[human,agent],conversation:{id:'main',title:'Main',kind:'main',participantIds:[human.id,agent.id]},conversations:[],messages:[]}});

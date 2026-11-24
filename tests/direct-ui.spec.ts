@@ -8,7 +8,7 @@ async function fixture(page:Page,options:{include?:boolean;poll?:boolean;post?:(
  let reads=0;
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:me});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'fixture'}});
   if(path.endsWith('/home'))return route.fulfill({json:{participants:people,conversation:main,conversations:[main,topic,...(options.include||(options.poll&&++reads>1)?[direct]:[])],messages:[]}});

@@ -65,9 +65,24 @@ ConnectionStrings__Nexus=<connectionString from C:/Nexus/.local/runtime.json>
 Nexus__DataProtectionPath=C:/Nexus/.local/keys
 ```
 
-Do not paste the connection string into committed source or logs. The app reads environment/configuration, not runtime.json itself. The parent launcher supplies the connection string. Data-protection paths must be absolute; the app defaults to `C:/Nexus/.local/keys`. Development HTTP is only for local loopback. Outside Development, use HTTPS: both cookies become Secure.
+Do not paste the connection string into committed source or logs. The app reads environment/configuration, not runtime.json itself. The parent launcher supplies the connection string. Data-protection paths must be absolute; Development defaults to `C:/Nexus/.local/keys`, while other environments require an explicit path. Test factories force guarded `backend/.test-keys` paths, never the real key directory. Development HTTP is only for local loopback. Outside Development, use HTTPS: both cookies become Secure.
 
-Startup applies checked-in EF migrations with `MigrateAsync`, never `EnsureCreated`. No application rows or credentials are seeded. A clean database stays unbootstrapped until a person supplies credentials. Main, its first membership, participant, admin account and initial session are created together during bootstrap. Migration history is the only initial database data.
+Development startup applies checked-in EF migrations with `MigrateAsync`, never `EnsureCreated`. Production startup does not apply migrations: `/health/ready` returns 503 while migrations are pending or PostgreSQL is unavailable. It may listen while unready; deployment must gate traffic on readiness. No application rows or credentials are seeded. A clean database stays unbootstrapped until a person supplies credentials. Main, its first membership, participant, admin account and initial session are created together during bootstrap. Migration history is the only initial database data.
+
+## Sprint 8 production backend contract
+
+See the separate [production operations guide](../deployment/README.md) for images, Compose, file secrets, proxy topology, HTTPS acceptance, persistence and cleanup. Local verification is not authorization to deploy; independent review and a later deployment approval remain required. The UI consumes the narrow `registrationAvailable` boolean, fails closed for absent/malformed values and hides account creation when unavailable.
+
+- `AllowedHosts`: explicit semicolon-separated production hostnames (e.g. `nexus.aether.lab`); missing/wildcard hosts fail startup. `Nexus__TrustedProxies`: explicit semicolon-separated IP addresses or valid non-global CIDRs; missing/invalid entries fail startup. Forwarded scheme/client address are processed before rate limiting only from these peers. Do not use broad trust as a topology workaround. Development forwarding/host behavior is unchanged.
+- `Nexus__DatabasePasswordFile`: optional file-secret connection mode used by production Compose; requires a readable nonempty file, builds the internal `postgres`/`nexus` connection without exposing its password. `Nexus__DatabaseHost` can override the internal host. Missing/invalid secret fails with a generic non-sensitive message. This bundle uses password authentication, explicitly disabling optional GSS encryption negotiation; no database TLS or Kerberos authentication is claimed. Direct connection-string configuration remains available outside this bundle.
+- `Nexus__DataProtectionPath`: required absolute persistent writable key directory outside Development. The bundle mounts its own `/keys` volume. Do not rotate/delete keys during updates; existing CSRF values must survive API restarts alongside sessions in PostgreSQL.
+- `Nexus__AllowPublicRegistration`: absent means enabled in Development, disabled otherwise. Development configuration explicitly enables it. Only boolean `true`/`false` are valid; malformed/empty values fail startup. Explicit `true` enables additional registration in Production. Bootstrap remains available on a clean migrated database regardless of this setting. After bootstrap, disabled direct registration returns 403 ProblemDetails with title `Public registration is unavailable.`; CSRF remains required.
+- `GET /health/live`: 200 `{"status":"alive"}`, independent of PostgreSQL.
+- `GET /health/ready`: 200 `{"status":"ready"}` only with database connectivity and no pending migrations; otherwise 503 `{"status":"unready"}`. No database or application details are returned.
+- `Nexus.Api --migrate-only` (or `dotnet Nexus.Api.dll --migrate-only` for published output): applies checked-in migrations and exits without an HTTP listener or application seed data. Repeat execution is safe. Failure exits nonzero with a generic error and suppresses provider logs. Supply the same database configuration as the API, using **only a disposable database during this sprint**. Never run this against the real development database.
+- Normal Production startup never migrates; Development still migrates automatically. Existing cookie security and CSRF requirements are unchanged.
+
+Focused checks: `node scripts/test-backend.mjs -c Release --filter "FullyQualifiedName~ProductionRegistrationTests|FullyQualifiedName~ProductionHealthTests|FullyQualifiedName~ProductionMigrationTests"`. Each creates its own disposable database (unavailable-database probes use loopback port 1). Migration process tests currently use the repository's Windows-local SDK paths, like the existing test harness. Real production-image migration and HTTPS acceptance run separately via `node scripts/test-production.mjs`; Linux-host harness execution has not been independently verified.
 
 ## HTTP contract
 
@@ -75,7 +90,7 @@ All JSON uses camelCase. Same-origin frontend proxy only; no permissive CORS pol
 
 | Method | Path | Request | Success |
 |---|---|---|---|
-| GET | `/api/auth/status` | — | `{requiresBootstrap:boolean}` |
+| GET | `/api/auth/status` | — | `{requiresBootstrap:boolean,registrationAvailable:boolean}` |
 | GET | `/api/auth/csrf` | — | `{token:string}` plus `nexus.csrf` cookie |
 | POST | `/api/auth/bootstrap` | `{email,displayName,password}` | Admin User DTO and `nexus.session` cookie |
 | POST | `/api/auth/register` | `{email,displayName,password}` | Non-admin User DTO and `nexus.session` cookie |

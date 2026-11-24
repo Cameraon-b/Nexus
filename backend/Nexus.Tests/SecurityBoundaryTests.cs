@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Npgsql;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 namespace Nexus.Tests;
 
 public class SecurityBoundaryTests
@@ -21,7 +23,10 @@ public class SecurityBoundaryTests
     public async Task Production_cookies_are_secure_http_only_strict()
     {
         await using var w = await TestWorkspace.Create();
-        using var host = new ApiHost(w.Connection, $"C:/Nexus/backend/.test-keys/{w.Name}", "Production");
+        // Exercise registration cookie flags under the explicit production override.
+        using var host = new ApiHost(w.Connection, $"C:/Nexus/backend/.test-keys/{w.Name}", "Production")
+            .WithWebHostBuilder(b => b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Nexus:AllowPublicRegistration"] = "true" })));
         using var client = host.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         var csrf = await client.GetAsync("/api/auth/csrf");
         var csrfCookie = csrf.Headers.GetValues("Set-Cookie").Single();

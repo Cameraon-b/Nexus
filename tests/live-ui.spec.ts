@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 test('connection failure offers retry without inventing a setup state', async ({page}) => {
  let failed = true;
- await page.route('**/api/**', route => failed ? route.fulfill({status:503,body:'offline'}) : route.fulfill({json:{requiresBootstrap:true}}));
+ await page.route('**/api/**', route => failed ? route.fulfill({status:503,body:'offline'}) : route.fulfill({json:{requiresBootstrap:true,registrationAvailable:false}}));
  await page.goto('/');
  await expect(page.getByRole('heading',{name:'Workspace unavailable'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Create workspace'})).toHaveCount(0);
@@ -14,7 +14,7 @@ test('messages persist through reload, retry with one request identity, and poll
  const requests:string[]=[];let rejectFirst=true;let offline=false;let expired=false;
  await page.route('**/api/**', async route => {
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'fixture-token'}});
   if(path.endsWith('/me'))return route.fulfill({status:expired?401:200,json:expired?{title:'Session ended'}:user});
   if(path.endsWith('/home')){
@@ -55,7 +55,7 @@ test('messages persist through reload, retry with one request identity, and poll
 test('expired session during home load returns to login', async ({page}) => {
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   return route.fulfill({status:401,json:{title:'Session expired'}});
  });
@@ -67,7 +67,7 @@ test('login reports field errors, clears them on edit, then renders safe message
  const body='<img src=x onerror=alert(1)> This is text, not HTML.';
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/csrf')){tokenCount++;return route.fulfill({json:{token:`token-${tokenCount}`}});}
   if(path.endsWith('/me'))return route.fulfill({status:signedIn?200:401,json:signedIn?user:{title:'Sign in required'}});
   if(path.endsWith('/login')){
@@ -94,7 +94,7 @@ test('login reports field errors, clears them on edit, then renders safe message
  await page.setViewportSize({width:1440,height:960});await page.screenshot({path:'test-results/live-desktop.png'});
 });
 test('email accepts the backend limit of 254 characters', async ({page}) => {
- await page.route('**/api/**',route=>route.fulfill({json:{requiresBootstrap:true}}));
+ await page.route('**/api/**',route=>route.fulfill({json:{requiresBootstrap:true,registrationAvailable:false}}));
  await page.goto('/');
  await expect(page.getByLabel('Email')).toHaveAttribute('maxlength','254');
  const email=`${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`;
@@ -106,7 +106,7 @@ test('a stale bootstrap conflict rediscovers existing-workspace authentication w
  let requiresBootstrap=true;let bootstrapPosts=0;let statusReads=0;
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status')){statusReads++;return route.fulfill({json:{requiresBootstrap}});}
+  if(path.endsWith('/status')){statusReads++;return route.fulfill({json:{requiresBootstrap,registrationAvailable:!requiresBootstrap}});}
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'stale-bootstrap-token'}});
   if(path.endsWith('/bootstrap')){
    bootstrapPosts++;requiresBootstrap=false;
@@ -132,7 +132,7 @@ test('a duplicate registration conflict remains a visible error', async ({page})
  let statusReads=0;let registerPosts=0;
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status')){statusReads++;return route.fulfill({json:{requiresBootstrap:false}});}
+  if(path.endsWith('/status')){statusReads++;return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:true}});}
   if(path.endsWith('/me'))return route.fulfill({status:401,json:{title:'Sign in required'}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'registration-token'}});
   if(path.endsWith('/register')){registerPosts++;return route.fulfill({status:409,json:{title:'Email already registered'}});}
@@ -153,7 +153,7 @@ test('a returning visitor can switch to registration and enter the Common Room',
  let signedIn=false;let authPosts=0;let tokenCount=0;
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:true}});
   if(path.endsWith('/me'))return route.fulfill({status:signedIn?200:401,json:signedIn?registeredUser:{title:'Sign in required'}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:`register-token-${++tokenCount}`}});
   if(path.endsWith('/register')){
@@ -185,7 +185,7 @@ test('home polling reveals a newcomer without replacing an unsent draft', async 
  let homeReads=0;
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/home')){
    homeReads++;
@@ -208,7 +208,7 @@ test('a delayed stale home poll cannot erase a locally delivered message', async
  const emptyRoom={participants:[person],conversation:{id:'main',title:'The Common Room',description:'Shared',participantIds:[person.id]},messages:[]};
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'message-token'}});
   if(path.endsWith('/home')){
@@ -235,7 +235,7 @@ test('a delayed stale home poll cannot erase a locally delivered message', async
 test('composer caps input at the backend limit of 5000 characters', async ({page}) => {
  await page.route('**/api/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   return route.fulfill({json:{participants:[person],conversation:{id:'main',title:'The Common Room',description:'Shared',participantIds:[person.id]},messages:[]}});
  });
@@ -249,7 +249,7 @@ test('topics disclosure and selected conversation expose accessible state', asyn
  const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
  const topic={id:'topic/accessible',title:'Accessible topic',kind:'topical',state:'active',participantIds:[person.id],description:'Clear state',createdAt:'2026-01-02T00:00:00Z'};
  await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
   if(path.endsWith('/conversations/topic%2Faccessible/messages'))return route.fulfill({json:[]});
@@ -272,7 +272,7 @@ test('topics open as a usable narrow-screen panel without horizontal overflow', 
  const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
  const topic={id:'topic/mobile',title:'Readable mobile topic',kind:'topical',state:'active',participantIds:[person.id],description:'Fits narrow screens',createdAt:'2026-01-02T00:00:00Z'};
  await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
   return route.fulfill({status:404,json:{title:'Not implemented'}});
@@ -292,7 +292,7 @@ test('topic creation reports whitespace-only required fields with associated acc
  let creationPosts=0;
  await page.route('**/api/**',route=>{
   const request=route.request();const path=new URL(request.url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main],messages:[]}});
   if(path.endsWith('/conversations/topical')&&request.method()==='POST'){creationPosts++;return route.fulfill({status:500,json:{title:'Should not submit'}});}
@@ -312,7 +312,7 @@ test('topic creation reports whitespace-only required fields with associated acc
 test('new topic dialog is labelled, modal, focus trapped, inerting the background, and restores its trigger', async ({page}) => {
  const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
  await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main],messages:[]}});
   return route.fulfill({status:404,json:{title:'Not implemented'}});
@@ -329,7 +329,7 @@ test('new topic dialog ignores Escape while creation is pending', async ({page})
  const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared',createdAt:'2026-01-01T00:00:00Z'};
  let postStarted!:()=>void;const started=new Promise<void>(resolve=>{postStarted=resolve;});
  await page.route('**/api/**',async route=>{const request=route.request();const path=new URL(request.url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'pending-topic-token'}});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main],messages:[]}});
@@ -349,7 +349,7 @@ test('topics validate, retry one creation identity, select the opening message, 
  const creationIds:string[]=[];const messageDestinations:string[]=[];let failCreate=true;
  await page.route('**/api/**',async route=>{
   const request=route.request();const path=new URL(request.url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'topic-token'}});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,existing,...(creationIds.length>1?[created]:[])],messages:histories.main}});
@@ -405,7 +405,7 @@ test('message retry identities and failures remain isolated by destination', asy
  const ids:Record<string,string[]>={main:[],[topic.id]:[]};
  await page.route('**/api/**',async route=>{
   const request=route.request();const path=new URL(request.url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'retry-token'}});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
@@ -436,7 +436,7 @@ test('overlapping sends keep each conversation pending and preserve an edited dr
  const mainRequest=new Promise<void>(resolve=>{mainStarted=resolve;});const topicRequest=new Promise<void>(resolve=>{topicStarted=resolve;});const mainResponse=new Promise<void>(resolve=>{mainFinished=resolve;});
  await page.route('**/api/**',async route=>{
   const request=route.request();const path=new URL(request.url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'overlap-token'}});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
@@ -467,7 +467,7 @@ test('a stale topic history response cannot erase a local send', async ({page}) 
  const historyGate=new Promise<void>(resolve=>{releaseHistory=resolve;});const historyStarted=new Promise<void>(resolve=>{markStarted=resolve;});
  await page.route('**/api/**',async route=>{
   const request=route.request();const path=new URL(request.url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:user});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'stale-token'}});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
@@ -484,12 +484,13 @@ test('a stale topic history response cannot erase a local send', async ({page}) 
 });
 test('session expiry while loading a selected topic returns to sign in', async ({page}) => {
  const main={id:'main',title:'The Common Room',kind:'main',state:'active',participantIds:[person.id],description:'Shared'};
+ let expired=false;
  const topic={id:'expired-topic',title:'Expiring topic',kind:'topical',state:'active',participantIds:[person.id],description:'Session check'};
  await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
-  if(path.endsWith('/me'))return route.fulfill({json:user});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
+  if(path.endsWith('/me'))return route.fulfill({status:expired?401:200,json:user});
   if(path.endsWith('/workspace/home'))return route.fulfill({json:{participants:[person],conversation:main,conversations:[main,topic],messages:[]}});
-  if(path.endsWith('/conversations/expired-topic/messages'))return route.fulfill({status:401,json:{title:'Session expired'}});
+  if(path.endsWith('/conversations/expired-topic/messages')){expired=true;return route.fulfill({status:401,json:{title:'Session expired'}});}
   return route.fulfill({status:404,json:{title:'Not implemented'}});
  });
  await page.goto('/');await page.getByRole('button',{name:'Topics'}).click();await page.getByRole('button',{name:topic.title}).click();
@@ -500,7 +501,7 @@ for (const mode of ['bootstrap','login','register'] as const) {
   let signedIn=false;let authPosts=0;let tokens=0;let sessionReads=0;
   await page.route('**/api/**',route=>{
    const path=new URL(route.request().url()).pathname;
-   if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:mode==='bootstrap'&&authPosts===0}});
+   if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:mode==='bootstrap'&&authPosts===0,registrationAvailable:mode!=='bootstrap'||authPosts>0}});
    if(path.endsWith('/csrf')) {
     tokens++;
     return tokens===2?route.fulfill({status:503,json:{title:'Temporary outage'}}):route.fulfill({json:{token:`token-${tokens}`}});
@@ -534,7 +535,7 @@ test('first run creates an authenticated participant-first room and signs out', 
  let signedIn = false; let bootstrap = true;
  await page.route('**/api/**', async route => {
   const path = new URL(route.request().url()).pathname;
-  if (path.endsWith('/status')) return route.fulfill({json:{requiresBootstrap:bootstrap}});
+  if (path.endsWith('/status')) return route.fulfill({json:{requiresBootstrap:bootstrap,registrationAvailable:false}});
   if (path.endsWith('/csrf')) return route.fulfill({json:{token:'fixture-csrf'}});
   if (path.endsWith('/bootstrap')) { expect(route.request().headers()['x-csrf-token']).toBe('fixture-csrf'); signedIn=true;bootstrap=false;return route.fulfill({json:user}); }
   if (path.endsWith('/me')) return route.fulfill({status:signedIn?200:401,json:signedIn?user:{title:'Sign in required'}});
@@ -555,4 +556,33 @@ test('first run creates an authenticated participant-first room and signs out', 
  await expect(page.getByRole('button',{name:'Direct messages',exact:true})).toBeEnabled();
  await page.getByRole('button',{name:'Sign out'}).click();
  await expect(page.getByRole('heading',{name:'Welcome back'})).toBeVisible();
+});
+
+
+test('production closed registration has no affordance even on a direct route', async ({page}) => {
+ await page.route('**/api/**', route => new URL(route.request().url()).pathname.endsWith('/status') ? route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}}) : route.fulfill({status:401,json:{}}));
+ await page.goto('/register');
+ await expect(page.getByRole('heading',{name:'Welcome back'})).toBeVisible();
+ await expect(page.getByRole('tab',{name:'Create account'})).toHaveCount(0);
+ await expect(page.getByRole('tablist')).toHaveCount(0);
+ await expect(page.getByRole('tabpanel')).toHaveCount(0);
+ await expect(page.getByLabel('Display name')).toHaveCount(0);
+});
+
+test('authentication tabs associate panels and support roving arrow focus',async({page})=>{
+ await page.route('**/api/**',route=>new URL(route.request().url()).pathname.endsWith('/status')?route.fulfill({json:{requiresBootstrap:false,registrationAvailable:true}}):route.fulfill({status:401,json:{}}));
+ await page.goto('/');
+ const login=page.getByRole('tab',{name:'Sign in'}),register=page.getByRole('tab',{name:'Create account'});
+ await expect(login).toHaveAttribute('tabindex','0');await expect(register).toHaveAttribute('tabindex','-1');
+ await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby',await login.getAttribute('id')??'missing');
+ await expect(page.getByRole('tabpanel')).toHaveAttribute('id',await login.getAttribute('aria-controls')??'missing');
+ await page.getByLabel('Password',{exact:true}).fill('Never-retain-this-password');
+ await login.focus();await page.keyboard.press('ArrowRight');
+ await expect(register).toBeFocused();await expect(register).toHaveAttribute('aria-selected','true');await expect(register).toHaveAttribute('tabindex','0');await expect(login).toHaveAttribute('tabindex','-1');
+ await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby',await register.getAttribute('id')??'missing');
+ await expect(page.getByRole('tabpanel')).toHaveAttribute('id',await register.getAttribute('aria-controls')??'missing');
+ await expect(page.getByLabel('Password',{exact:true})).toHaveValue('');
+ await page.keyboard.press('ArrowRight');await expect(login).toBeFocused();
+ await page.keyboard.press('ArrowLeft');await expect(register).toBeFocused();
+ await login.click();await expect(login).toHaveAttribute('aria-selected','true');
 });

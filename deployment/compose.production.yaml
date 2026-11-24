@@ -1,0 +1,107 @@
+services:
+  postgres:
+    image: postgres:18@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
+    environment:
+      POSTGRES_DB: nexus
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_password
+    secrets: [database_password]
+    volumes:
+      - database:/var/lib/postgresql
+    networks: [backend]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U nexus -d nexus']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    image: nexus-api:${NEXUS_COMMIT:?exact commit required}
+    build:
+      context: ..
+      dockerfile: deployment/api.Dockerfile
+      args:
+        NEXUS_COMMIT: ${NEXUS_COMMIT:?exact commit required}
+    command: [--migrate-only]
+    environment: &api_environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Nexus__DatabasePasswordFile: /run/secrets/database_password
+      Nexus__DatabaseHost: postgres
+      Nexus__DataProtectionPath: /keys
+      Nexus__AllowPublicRegistration: 'false'
+      AllowedHosts: ${NEXUS_HOST:?host required}
+      Nexus__TrustedProxies: ${NEXUS_FRONTEND_IP:?frontend IP required}
+    secrets: [database_password]
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    restart: 'no'
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    image: nexus-api:${NEXUS_COMMIT:?exact commit required}
+    environment: *api_environment
+    secrets: [database_password]
+    volumes: [keys:/keys]
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  frontend:
+    image: nexus-frontend:${NEXUS_COMMIT:?exact commit required}
+    build:
+      context: ..
+      dockerfile: deployment/frontend.Dockerfile
+      args:
+        NEXUS_COMMIT: ${NEXUS_COMMIT:?exact commit required}
+    environment:
+      NEXUS_HOST: ${NEXUS_HOST:?host required}
+      NEXUS_EDGE_PROXY: ${NEXUS_EDGE_PROXY:?trusted edge IP or CIDR required}
+      NGINX_ENVSUBST_OUTPUT_DIR: /tmp/conf.d
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        mkdir -p /tmp/conf.d
+        envsubst '$$NEXUS_HOST $$NEXUS_EDGE_PROXY' < /etc/nginx/templates/default.conf.template > /tmp/conf.d/default.conf
+        printf 'pid /tmp/nginx.pid; events {} http { include /etc/nginx/mime.types; access_log off; client_body_temp_path /tmp/client_temp; proxy_temp_path /tmp/proxy_temp; fastcgi_temp_path /tmp/fastcgi_temp; uwsgi_temp_path /tmp/uwsgi_temp; scgi_temp_path /tmp/scgi_temp; include /tmp/conf.d/*.conf; }' > /tmp/nginx.conf
+        exec nginx -c /tmp/nginx.conf -g 'daemon off;'
+    ports:
+      - '${NEXUS_BIND_IP:-127.0.0.1}:${NEXUS_PORT:-8088}:8080'
+    networks:
+      backend:
+        ipv4_address: ${NEXUS_FRONTEND_IP:?frontend IP required}
+      edge: {}
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+networks:
+  backend:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${NEXUS_SUBNET:?unique backend subnet required}
+          ip_range: ${NEXUS_DYNAMIC_RANGE:?dynamic range excluding frontend IP required}
+  edge:
+    ipam:
+      config:
+        - subnet: ${NEXUS_EDGE_SUBNET:?unique edge subnet required}
+          ip_range: ${NEXUS_EDGE_DYNAMIC_RANGE:?edge dynamic range required}
+volumes:
+  database: {}
+  keys: {}
+secrets:
+  database_password:
+    file: ${NEXUS_SECRET_FILE:?absolute secret path required}

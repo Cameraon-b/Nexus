@@ -7,7 +7,7 @@ async function fixture(page:Page,admin=true){
  let created=false;let active=true;
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname,post=route.request().method()==='POST';
-  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false}});
+  if(path.endsWith('/status'))return route.fulfill({json:{requiresBootstrap:false,registrationAvailable:false}});
   if(path.endsWith('/me'))return route.fulfill({json:{id:'account',participantId:human.id,displayName:human.name,isAdmin:admin}});
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'csrf-fixture'}});
   if(path.endsWith('/home'))return route.fulfill({json:{participants:[human,agent],conversation:main,conversations:[main],messages:[]}});
