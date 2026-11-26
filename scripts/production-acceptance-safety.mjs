@@ -50,11 +50,11 @@ function hostPath(value){
  const desktop=value.match(/^\/(?:run\/desktop\/mnt\/host|host_mnt)\/([a-z])\/(.*)$/i);
  return desktop?`${desktop[1]}:/${desktop[2]}`.toLowerCase():value;
 }
-export function auditRuntime(containers,loopback,{frontendPort,tlsPort,tlsDirectory,project,secretFile}={}){
+export function auditRuntime(containers,loopback,{frontendPort,tlsPort,tlsDirectory,project,secretFile,approvedProductionBinding=false}={}){
  assert.ok(Number.isInteger(frontendPort)&&frontendPort>0&&frontendPort<=65535,'explicit expected frontend port');
  assert.match(project??'',/^[a-z0-9][a-z0-9_-]*$/);
  assert.ok(secretFile);
- assert.ok(['127.0.0.1','::1'].includes(loopback));
+ assert.ok(['127.0.0.1','::1'].includes(loopback)||approvedProductionBinding&&isIP(loopback)&&!['0.0.0.0','::'].includes(loopback));
  const expected=['postgres','migrate','api','frontend',...(tlsPort===undefined?[]:['tls'])];
  assert.deepEqual(containers.map(c=>c.Config.Labels['com.docker.compose.service']).sort(),expected.sort(),'exact audited service set');
  for(const c of containers){
