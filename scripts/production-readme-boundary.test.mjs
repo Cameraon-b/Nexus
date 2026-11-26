@@ -10,13 +10,26 @@ function assertAcceptedOperationalBoundary(doc){
  assert.match(plain,/single bounded final review passed with zero closure blockers/);
  assert.match(plain,new RegExp(`candidate ${candidate} (?:verified/)?installed on Reeba(?: and |/)Nora`));
  assert.match(plain,/successful backup(?: and off-host pull, and a successful disposable restore with exact teardown|\/pull\/restore and verified exact teardown)/);
- assert.match(plain,/uncommitted (?:Sprint 10 operational tree|operational tree)/);
- assert.match(plain,/not (?:a new production application image or Git release|an application upgrade)/);
- assert.match(plain,/Cameron acceptance and Git integration remain pending/);
- assert.match(plain,/no Sprint 10 commit, merge or push(?: has occurred)?, and GitHub remains untouched/);
+ assert.match(plain,/accepted (?:Sprint 10 )?operational bundle/);
+ assert.match(plain,/not (?:a new production application image|an application upgrade)/);
+ assertPublishedBoundary(doc);
  assert.doesNotMatch(plain,/rebuilt candidate\/live restore remain pending|not yet built into a final candidate, installed, migrated, or re-rehearsed live|Sprint-10 Round-14 corrections.*no claim of live installation or acceptance/);
 }
-test('root README separates deployed Sprint-8 application, accepted Round-14 operations and pending Git integration',()=>{
+function assertPublishedBoundary(doc){
+ const plain=doc.replaceAll('**','').replaceAll('`','');
+ assert.match(plain,/Cameron accepted Sprint 10 on November 25, 2026/);
+ for(const term of ['587a0b5','feat: complete Sprint 10 production trust and recovery','c5c562e','merge: complete Sprint 10 production trust and recovery','local main','Gitea','c5c562e78c2894c9644ee44aee65f1a6613be65d','origin/main','a7869a3c058cd6f813848050633731e32f1346e9','GitHub synchronization remains Cameron-managed and was not performed by Hermes','component-by-component','reparse/symlink','backlog-only hardening and does not reopen the sprint'])assert.ok(plain.includes(term),term);
+ assert.doesNotMatch(plain,/Cameron acceptance and Git integration remain pending|Sprint 10 remains uncommitted|No Sprint 10 commit|no Sprint 10 commit|uncommitted (?:Sprint 10 operational tree|operational tree|operational candidate)/);
+}
+test('all authoritative Sprint-10 docs record owner acceptance and completed local-main/Gitea publication',()=>{
+ for(const file of ['README.md','backend/README.md','deployment/README.md','docs/Sprint_10_Production_Trust_Recovery.md']){
+  const doc=read(file);
+  assertPublishedBoundary(doc);
+  assert.ok(doc.includes(application),file);
+  assert.ok(doc.includes(candidate),file);
+ }
+});
+test('root README separates deployed Sprint-8 application, accepted Round-14 operations and completed Git integration',()=>{
  const doc=read('README.md');
  for(const term of ['909cadc9edf6ff8484b8859b0f17ac9b0184a1c0','nexus_prod_nora','https://nexus.aether.lab','Sprint 9','Sprint 10','AETHER private-CA','HSTS for Nexus only','signed age-encrypted backups','off-host retention','disposable restore proof','six-layer monitoring','Sprint 7 schema and Review workflow exist in the real local workspace','real local agent integration exists','established reviewed workflow','disposable tests never target the real database','/demo']) assert.ok(doc.includes(term),term);
  assertAcceptedOperationalBoundary(doc);

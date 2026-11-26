@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {tmpdir,hostname} from 'node:os';
 import {testBinding as operationLockRoot} from './fixtures/operation-candidate.mjs';
 import {privateCustody} from './fixtures/operation-candidate.mjs';
-const source=readFileSync(new URL('./windows-operation-lock.ps1',import.meta.url),'utf8').split("-TypeDefinition @'\n")[1].split("\n'@")[0];
+const source=readFileSync(new URL('./windows-operation-lock.ps1',import.meta.url),'utf8').replaceAll('\r\n','\n').split("-TypeDefinition @'\n")[1].split("\n'@")[0];
 const quote=s=>"'"+s.replaceAll("'","''")+"'";
 function fixture(fn){const d=mkdtempSync(join(tmpdir(),'nexus-r10-handles-'));try{privateCustody(d);const a=join(d,'tools','candidates','a');mkdirSync(a,{recursive:true});const config=join(d,'config');writeFileSync(config,'{}');const b=operationLockRoot(config,a);fn(d,{version:1,action:'acquire',owner:processIdentity(),bindings:b.bindings,custody:b.custody,directory:b.directory,key:'a'.repeat(64)+'.lock',token:'owner-'+'b'.repeat(64)+'.json',config:b.config,configIdentity:b.configIdentity});}finally{rmSync(d,{recursive:true,force:true});}}
 function compiled(d,code,body){const p=join(d,'test.ps1');writeFileSync(p,"$ErrorActionPreference='Stop'\nAdd-Type -ReferencedAssemblies System.Web.Extensions -TypeDefinition @'\n"+code+"\n'@\n[Console]::SetIn([IO.StringReader]::new('{\"action\":\"release\"}'+[char]10))\n"+body);const r=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-File',p],{encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr);return r.stdout.trim().split(/\r?\n/).at(-1);}

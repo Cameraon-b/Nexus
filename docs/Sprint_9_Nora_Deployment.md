@@ -25,7 +25,7 @@ Sprint 9 is an infrastructure deployment rather than a product-code sprint. The 
 | Public reverse proxy | Existing system-Docker Nginx Proxy Manager route now forwards `nexus.aether.lab` to `http://172.20.0.1:8088`. |
 | TLS | HTTPS active with a dedicated self-signed custom certificate. HTTP redirects to HTTPS. The certificate is encrypted in transit but is not publicly trusted. |
 | Disposable source-address probe | Removed with its two temporary rootless Docker networks. |
-| Git publication | The deployed application commit was already on Gitea. This Sprint 9 record remains on its feature branch until Cameron accepts and authorizes the established merge/publication workflow. |
+| Git publication | The deployed application commit was already on Gitea. At this historical Sprint 9 handoff, this record remained on its feature branch pending Cameron's acceptance and publication authorization. The subsequent Sprint 10 closure is recorded in [the Sprint 10 log](Sprint_10_Production_Trust_Recovery.md): owner-accepted and published to local `main`/Gitea, with GitHub synchronization still Cameron-managed. |
 
 ## Nora inventory and privilege boundary
 

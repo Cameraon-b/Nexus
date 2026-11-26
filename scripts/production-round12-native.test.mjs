@@ -35,7 +35,7 @@ for(const fault of ['cleanup','replacement'])test('round12 native Windows recove
  const project='nexus_prod_native_recover',key=createHash('sha256').update(project).digest('hex')+'.lock',token='owner-'+'b'.repeat(64)+'.json';
  const directory=join(d,'.nexus-production-locks'),lock=join(directory,key);mkdirSync(directory);mkdirSync(lock);writeFileSync(join(lock,token),JSON.stringify({version:1,token,pid:String(process.pid),start:'1'})+'\n');
  const binding=operationLockRoot(config,candidate),request={version:1,action:'recover',bindings:binding.bindings,custody:binding.custody,directory,config,configIdentity:binding.configIdentity,key,token,owner:{pid:String(process.pid),start:'1'}};
- let code=readFileSync('scripts/windows-operation-lock.ps1','utf8').split("-TypeDefinition @'\n")[1].split("\n'@")[0];
+ let code=readFileSync('scripts/windows-operation-lock.ps1','utf8').replaceAll('\r\n','\n').split("-TypeDefinition @'\n")[1].split("\n'@")[0];
  if(fault==='cleanup')code=code.replace('static void Delete(SafeFileHandle h) {','static int TestDeletes; static void Delete(SafeFileHandle h) { if(++TestDeletes==2)throw new IOException();');
  else code=code.replace('Remove(lockPath,ownerPath,lockHandle,tokenHandle,stale);','int denied=0;try { File.Move(ownerPath,ownerPath+"-replaced"); } catch(IOException) { denied++; } try { Directory.Move(lockPath,lockPath+"-replaced"); } catch(IOException) { denied++; } Need(denied==2);Remove(lockPath,ownerPath,lockHandle,tokenHandle,stale);');
  const script=join(d,'native-recovery.ps1'),quote=s=>"'"+s.replaceAll("'","''")+"'";

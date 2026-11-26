@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {artifactNames,readBoundedSnapshot} from './production-envelope.mjs';
 import {validWindowsIdentity,invokeRetentionHelper} from './production-retention.mjs';
-const source=readFileSync(new URL('./windows-retire-quartet.ps1',import.meta.url),'utf8').split("-TypeDefinition @'\n")[1].split("\n'@ | Out-Null")[0];
+const source=readFileSync(new URL('./windows-retire-quartet.ps1',import.meta.url),'utf8').replaceAll('\r\n','\n').split("-TypeDefinition @'\n")[1].split("\n'@ | Out-Null")[0];
 function fixture(fn){const directory=mkdtempSync(join(tmpdir(),'nexus-r8-'));try{return fn(directory);}finally{rmSync(directory,{recursive:true,force:true});}}
 function compiled(directory,code,body){const script=join(directory,'test.ps1');writeFileSync(script,"$ErrorActionPreference='Stop'\nAdd-Type -ReferencedAssemblies System.Web.Extensions -TypeDefinition @'\n"+code+"\n'@\n"+body);const r=spawnSync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-File',script],{encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr);return r.stdout.trim();}
 const quote=s=>"'"+s.replaceAll("'","''")+"'";

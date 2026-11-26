@@ -1,5 +1,7 @@
-# Review-only rootless user unit: Round 14 is repository-only; checks and fresh review pending, not deployment acceptance.
-# Fresh independent review/rebuilt candidate/live producer and restore remain pending.
+# Rootless user unit template; not a live configuration export.
+# Historical pre-live Round 14 checkpoint required fresh review and live verification.
+# Sprint 10 is now owner-accepted and published to local main/Gitea; see deployment/README.md.
+# Production application images remain Sprint 8; this template does not install or deploy anything.
 # Requires python3 (standard library only) and node installed at trusted system paths.
 [Unit]
 Description=Nexus validated encrypted backup (exact project)
