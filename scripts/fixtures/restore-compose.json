@@ -1,0 +1,229 @@
+{
+  "name": "nexus_s10_restore_fixture",
+  "networks": {
+    "backend": {
+      "name": "nexus_s10_restore_fixture_backend",
+      "ipam": {
+        "config": [
+          {
+            "subnet": "10.251.10.0/24",
+            "ip_range": "10.251.10.128/25"
+          }
+        ]
+      },
+      "internal": true
+    },
+    "edge": {
+      "name": "nexus_s10_restore_fixture_edge",
+      "ipam": {
+        "config": [
+          {
+            "subnet": "10.251.11.0/24",
+            "ip_range": "10.251.11.128/25"
+          }
+        ]
+      }
+    }
+  },
+  "secrets": {
+    "database_password": {
+      "name": "nexus_s10_restore_fixture_database_password",
+      "file": "C:/private/secret"
+    }
+  },
+  "services": {
+    "api": {
+      "command": null,
+      "depends_on": {
+        "migrate": {
+          "condition": "service_completed_successfully",
+          "required": true
+        }
+      },
+      "entrypoint": null,
+      "environment": {
+        "ASPNETCORE_ENVIRONMENT": "Production",
+        "AllowedHosts": "localhost",
+        "Nexus__AllowPublicRegistration": "false",
+        "Nexus__DataProtectionPath": "/keys",
+        "Nexus__DatabaseHost": "postgres",
+        "Nexus__DatabasePasswordFile": "/run/secrets/database_password",
+        "Nexus__TrustedProxies": "10.251.10.2"
+      },
+      "image": "nexus-api:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "networks": {
+        "backend": null
+      },
+      "read_only": true,
+      "restart": "unless-stopped",
+      "secrets": [
+        {
+          "source": "database_password",
+          "target": "/run/secrets/database_password"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp"
+      ],
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "keys",
+          "target": "/keys",
+          "volume": {}
+        }
+      ]
+    },
+    "frontend": {
+      "build": {
+        "context": "C:\\Nexus",
+        "dockerfile": "deployment/frontend.Dockerfile",
+        "args": {
+          "NEXUS_COMMIT": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "command": [
+        "mkdir -p /tmp/conf.d\nenvsubst '$$NEXUS_HOST $$NEXUS_EDGE_PROXY' \u003c /etc/nginx/templates/default.conf.template \u003e /tmp/conf.d/default.conf\nprintf 'pid /tmp/nginx.pid; events {} http { include /etc/nginx/mime.types; access_log off; client_body_temp_path /tmp/client_temp; proxy_temp_path /tmp/proxy_temp; fastcgi_temp_path /tmp/fastcgi_temp; uwsgi_temp_path /tmp/uwsgi_temp; scgi_temp_path /tmp/scgi_temp; include /tmp/conf.d/*.conf; }' \u003e /tmp/nginx.conf\nexec nginx -c /tmp/nginx.conf -g 'daemon off;'\n"
+      ],
+      "depends_on": {
+        "api": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "entrypoint": [
+        "/bin/sh",
+        "-ec"
+      ],
+      "environment": {
+        "NEXUS_EDGE_PROXY": "10.251.11.2",
+        "NEXUS_HOST": "localhost",
+        "NGINX_ENVSUBST_OUTPUT_DIR": "/tmp/conf.d"
+      },
+      "image": "nexus-frontend:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "networks": {
+        "backend": {
+          "ipv4_address": "10.251.10.2"
+        },
+        "edge": {}
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 8080,
+          "published": "49991",
+          "protocol": "tcp"
+        }
+      ],
+      "read_only": true,
+      "restart": "unless-stopped",
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp"
+      ]
+    },
+    "migrate": {
+      "build": {
+        "context": "C:\\Nexus",
+        "dockerfile": "deployment/api.Dockerfile",
+        "args": {
+          "NEXUS_COMMIT": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "command": [
+        "--migrate-only"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "entrypoint": null,
+      "environment": {
+        "ASPNETCORE_ENVIRONMENT": "Production",
+        "AllowedHosts": "localhost",
+        "Nexus__AllowPublicRegistration": "false",
+        "Nexus__DataProtectionPath": "/keys",
+        "Nexus__DatabaseHost": "postgres",
+        "Nexus__DatabasePasswordFile": "/run/secrets/database_password",
+        "Nexus__TrustedProxies": "10.251.10.2"
+      },
+      "healthcheck": {
+        "disable": true
+      },
+      "image": "nexus-api:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "networks": {
+        "backend": null
+      },
+      "read_only": true,
+      "restart": "no",
+      "secrets": [
+        {
+          "source": "database_password",
+          "target": "/run/secrets/database_password"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp"
+      ]
+    },
+    "postgres": {
+      "command": null,
+      "entrypoint": null,
+      "environment": {
+        "POSTGRES_DB": "nexus",
+        "POSTGRES_PASSWORD_FILE": "/run/secrets/database_password",
+        "POSTGRES_USER": "nexus"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U nexus -d nexus"
+        ],
+        "timeout": "3s",
+        "interval": "5s",
+        "retries": 20
+      },
+      "image": "postgres:18@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4",
+      "networks": {
+        "backend": null
+      },
+      "restart": "unless-stopped",
+      "secrets": [
+        {
+          "source": "database_password",
+          "target": "/run/secrets/database_password"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "database",
+          "target": "/var/lib/postgresql",
+          "volume": {}
+        }
+      ]
+    }
+  },
+  "volumes": {
+    "database": {
+      "name": "nexus_s10_restore_fixture_database"
+    },
+    "keys": {
+      "name": "nexus_s10_restore_fixture_keys"
+    }
+  }
+}

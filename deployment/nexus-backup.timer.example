@@ -1,0 +1,13 @@
+# Review-only rootless user timer. Schedule and user lingering require approval.
+[Unit]
+Description=Daily Nexus backup example
+
+[Timer]
+OnCalendar=*-*-* 08:15:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+AccuracySec=1s
+Unit=nexus-backup.service
+
+[Install]
+WantedBy=timers.target

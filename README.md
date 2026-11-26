@@ -14,11 +14,13 @@ On first visit, create your own administrator account (display name, email, pass
 
 `npm start` brings up PostgreSQL, builds the API, starts missing services, and reuses an existing Nexus frontend. Ctrl+C stops API/UI processes owned by that launcher. PostgreSQL stays running to preserve your workspace. To stop only the database, run `docker stop nexus-postgres-1`; the launcher starts it again later.
 
-## Production packaging (Sprint 8 — awaiting independent review)
+## Production and current repository boundary
 
-The separate [production bundle](deployment/README.md) provides digest-pinned multi-stage images, isolated Compose networks, file secrets, persistent database/key volumes, explicit migrations, trusted proxy handling and safe operational commands. Local isolated HTTPS acceptance covers the complete bootstrap/agent/review/restart journey. This uncommitted tree is **not an approved release or Nora deployment**; evidence and limitations are in ignored `artifacts/s8/STATUS.md` for Hermes.
+The accepted Sprint-8 production application image/commit remains `909cadc9edf6ff8484b8859b0f17ac9b0184a1c0`, deployed on Nora as `nexus_prod_nora` behind **https://nexus.aether.lab**. Sprint 9 is documentation/history. Sprint 10 established AETHER private-CA trust, HSTS for Nexus only, signed age-encrypted backups, off-host retention, disposable restore proof, and six-layer monitoring; see the [deployment guide](deployment/README.md) and [Sprint log](docs/Sprint_10_Production_Trust_Recovery.md) for historical live evidence and limitations.
 
-Production public registration is closed after first-admin bootstrap by default; the UI hides account creation when unavailable. Development registration and `npm start` remain unchanged. API health and `--migrate-only` contracts are in [backend/README.md](backend/README.md). No real DNS, certificates, OpenResty, or external services were modified.
+**Round 14 technical/live acceptance is complete**: the single bounded final review passed with zero closure blockers. Parent-owned evidence from **2026-11-25 evening CST / 2026-11-26 UTC** records final candidate `f785ae72cda0e1333194eff69c63022379920287acd402b77b93c0ecc86c440d` verified/installed on Reeba and Nora, a fresh successful backup and off-host pull, and a successful disposable restore with exact teardown. One accepted nonblocking custody-creation suggestion is deferred in the Sprint log. This candidate represents the **uncommitted Sprint 10 operational tree**, not a new production application image or Git release. **Cameron acceptance and Git integration remain pending**; no Sprint 10 commit, merge or push has occurred, and GitHub remains untouched.
+
+The production bundle provides digest-pinned images, isolated networks, file secrets, persistent database/key volumes, explicit migrations and trusted proxy handling. Production public registration is closed after first-admin bootstrap by default; the UI hides account creation when unavailable. Development registration and local startup remain available within the reviewed workflow below. API health and `--migrate-only` contracts are in [backend/README.md](backend/README.md).
 
 ## Implemented in this slice
 
@@ -33,7 +35,7 @@ Production public registration is closed after first-admin bootstrap by default;
 - Successful home snapshots reconcile authoritatively; removed/denied conversations lose their private caches and selection. Locally successful creates survive stale polls until observed by a later snapshot
 - The prototype's sage/dark shell, participant-first layout and mobile treatment
 
-**Still to build:** invitations, group and agent–agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, presence, encryption features, topic archiving, production connector installations, password recovery, and deployment on Nora. `/demo` still offers broader sample flows for design iteration; nothing there is connected to the real database. Sprint 8 adds closed-by-default Production registration and a single-host packaging boundary with an explicit maintenance window. Local verification is not Nora deployment or release approval; see [deployment/README.md](deployment/README.md).
+**Still to build:** invitations, group and agent–agent DMs, message requests, unread counts, notifications, blocking/muting, attachments, edits/deletes, presence, encryption features, topic archiving, broader production connector installations and password recovery. `/demo` still offers broader sample flows for design iteration; nothing there is connected to the real database. Sprint 8 adds closed-by-default Production registration and a single-host packaging boundary with an explicit maintenance window. Local verification is not Nora deployment or release approval; see [deployment/README.md](deployment/README.md).
 
 ## Sprint 6 — agent connections and pending replies
 
@@ -43,7 +45,7 @@ Active agents appear in ordinary Direct Message recipients with AGENT labels, ho
 
 The bearer-only integration API supports `/me`, bounded chronological `/inbox` polling with participant-scoped server cursors, and retry-safe pending `/drafts`. Cookies never authenticate integration requests; bearer tokens never authenticate human/admin routes. Human/admin writes retain CSRF. Drafts remain separate from ordinary Home/history until an active human admin approves release through the Sprint 7 Review queue. Revocation blocks subsequent integration requests immediately. See `backend/README.md` for contracts.
 
-**Deferred:** automatic publishing, agent–agent DMs, services and moderation workflows, webhooks, external connector installation and hardening beyond Sprint 8's documented single-host packaging boundary. `/demo` remains browser-local sample functionality. The Sprint 7 migration has not been applied to the real database and no Hermes/OpenClaw installation has been configured; migrations and the reference connector acceptance journey run only against disposable databases.
+**Deferred:** automatic publishing, agent–agent DMs, services and moderation workflows, webhooks, broader external connector installations and hardening beyond the documented single-host boundary. `/demo` remains browser-local sample functionality. The Sprint 7 schema and Review workflow exist in the real local workspace, and a real local agent integration exists. This does not authorize unrestricted automation: agent drafts still require explicit active-human-admin approval before release; token scope, revocation and access checks remain enforced.
 
 ## Sprint 7 — Review queue and governed release
 
@@ -53,7 +55,7 @@ Approval atomically records one immutable decision and at most one delivered mes
 
 Admin routes: `GET /api/admin/approvals`, `GET /api/admin/approvals/{draftId}`, and cookie+CSRF `POST /api/admin/approvals/{draftId}/decision`. See `backend/README.md` for payloads, pagination and lock ordering. `/demo` remains a separate simulation, not this workflow.
 
-**Deployment warning:** Development startup auto-migrates; Production requires explicit migrations. Do not start/restart this worktree against the real `nexus` database before independent review, backup and approved migration. The new journey is verified only against uniquely named disposable databases; the real pending draft remains untouched.
+**Migration boundary:** Development startup may migrate the protected local database only through the established reviewed workflow, including review, backup and migration approval. Production uses explicit migrations/backups; disposable tests never target the real database. Passing repository tests or independent review does not authorize installing or migrating the current corrections.
 
 ## Local data and secrets
 
@@ -90,7 +92,7 @@ Backend tests create/drop only unique `nexus_test_*` databases. Live browser tes
 
 Sprint 6 verification: **29 frontend unit, 3 tooling, 147 PostgreSQL backend (none skipped), 58 intercepted/prototype browser, and 28 disposable live tests passed**. Exact commands and logs are recorded in ignored `artifacts/s6/STATUS.md`. The live suite includes both the existing human–human private journey and the admin/human/bearer three-context agent journey, with direct PostgreSQL assertions. Focused RED/GREEN logs cover identity/tokens, human-agent Direct creation, authorization, inbox pagination, drafts and admin UI. Build, .NET format, EF pending-model and source/safety audits are recorded alongside suite results.
 
-On a fresh Windows checkout: install Node and Docker Desktop, run `npm ci`, then `python scripts/install-sdk.py` to download the SDK pinned in global.json (SHA-512 verified, extracted locally), and `npm run setup`. Browser tests additionally need Playwright Chromium installed with `PLAYWRIGHT_BROWSERS_PATH` set to the repository's `.browsers` directory. The supplied environment already has these prerequisites. Linux deployments should use the pinned .NET SDK with their own provisioning; Nora deployment is not delivered in this slice.
+On a fresh Windows checkout: install Node and Docker Desktop, run `npm ci`, then `python scripts/install-sdk.py` to download the SDK pinned in global.json (SHA-512 verified, extracted locally), and `npm run setup`. Browser tests additionally need Playwright Chromium installed with `PLAYWRIGHT_BROWSERS_PATH` set to the repository's `.browsers` directory. The supplied environment already has these prerequisites. Linux deployments should use the pinned .NET SDK with the reviewed production provisioning in [deployment/README.md](deployment/README.md).
 
 ## Architecture and source
 

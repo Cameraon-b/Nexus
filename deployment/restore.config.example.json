@@ -1,0 +1,14 @@
+{
+  "identity": "/srv/restore-private/age-identity.txt",
+  "tempRoot": "/srv/restore-private/tmp",
+  "sourceProject": "nexus_prod_example",
+  "host": "localhost",
+  "bindIp": "127.0.0.1",
+  "port": 49991,
+  "backendSubnet": "10.251.10.0/24",
+  "backendDynamicRange": "10.251.10.128/25",
+  "frontendIp": "10.251.10.2",
+  "edgeSubnet": "10.251.11.0/24",
+  "edgeDynamicRange": "10.251.11.128/25",
+  "edgeProxy": "10.251.11.2"
+}

@@ -2,9 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
+import {operationCandidate,removeFixture as rmSync} from './fixtures/operation-candidate.mjs';
 import {acceptanceEnvironment} from './production-acceptance-config.mjs';
 test('explicit configuration cannot inherit conflicting shell secrets or interpolation settings',()=>{
  const dir=mkdtempSync(join(tmpdir(),'nexus-explicit-config-'));
@@ -29,9 +30,10 @@ test('emergency status/stop/confirmed destroy work without database secret; serv
  const dir=mkdtempSync(join(tmpdir(),'nexus-recovery-config-'));
  try{
   const config=join(dir,'production.env');writeFileSync(config,acceptanceEnvironment({commit:'bd054b4a63d453488b7207651fdaad0df4e9df0b',dir,octet:100,frontendPort:49991}));
+  const {cli}=operationCandidate(dir);
   const project='nexus_s8_recovery_'+process.pid;
   for(const command of ['validate','build','migrate','start','status','stop','destroy']){
-   const r=spawnSync(process.execPath,['scripts/production.mjs',command,'--project',project,'--config-file',config,...(command==='destroy'?['--confirm-destroy',project]:[])],{encoding:'utf8'});
+   const r=spawnSync(process.execPath,[cli,command,'--project',project,'--config-file',config,...(command==='destroy'?['--confirm-destroy',project]:[])],{encoding:'utf8'});
    assert.equal(r.status,['status','stop','destroy'].includes(command)?0:1,command+': '+r.stderr);
   }
  }finally{rmSync(dir,{recursive:true,force:true});}
@@ -39,12 +41,13 @@ test('emergency status/stop/confirmed destroy work without database secret; serv
 test('separate CLI processes cannot overlap any mutating operation',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'nexus-concurrent-config-')),config=join(dir,'production.env');writeFileSync(config,'');
  const otherConfig=join(dir,'other.env');writeFileSync(otherConfig,'');
+ const {cli,root}=operationCandidate(dir);
  const project='nexus_s8_lock_'+process.pid;
- const owner=spawn(process.execPath,['--input-type=module','-e',`import {acquireOperationLock} from './scripts/production-operations.mjs';import {join} from 'node:path';const release=acquireOperationLock(process.argv[1],process.argv[2],join(process.cwd(),'.local','production-locks'));console.log('locked');process.stdin.once('data',()=>{release();process.exit();});`,project,config],{stdio:['pipe','pipe','pipe']});
+ const owner=spawn(process.execPath,['--input-type=module','-e',`import {acquireOperationLock,operationLockRoot} from './scripts/production-operations.mjs';const release=await acquireOperationLock(process.argv[1],process.argv[2],operationLockRoot(process.argv[2],process.argv[3]));console.log('locked');process.stdin.once('data',async()=>{await release();process.exit();});`,project,config,root],{stdio:['pipe','pipe','pipe']});
  try{
   await once(owner.stdout,'data');
   for(const command of ['build','migrate','start','stop','destroy']){
-   const r=spawnSync(process.execPath,['scripts/production.mjs',command,'--project',project,'--config-file',otherConfig,'--confirm-destroy',project],{encoding:'utf8'});
+   const r=spawnSync(process.execPath,[cli,command,'--project',project,'--config-file',otherConfig,...(command==='destroy'?['--confirm-destroy',project]:[])],{encoding:'utf8'});
    assert.equal(r.status,1);assert.match(r.stderr,/operation lock is held/);
   }
  }finally{owner.stdin.write('release');await once(owner,'exit');rmSync(dir,{recursive:true,force:true});}

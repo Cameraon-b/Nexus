@@ -1,0 +1,19 @@
+# Review-only rootless user unit: Round 14 is repository-only; checks and fresh review pending, not deployment acceptance.
+# Fresh independent review/rebuilt candidate/live producer and restore remain pending.
+# Requires python3 (standard library only) and node installed at trusted system paths.
+[Unit]
+Description=Nexus validated encrypted backup (exact project)
+# Refuse manual stop/restart, including while the oneshot backup is active.
+RefuseManualStop=yes
+
+[Service]
+Type=oneshot
+# Replace all 64 zeroes with the independently reviewed 64-lowercase-hex content address.
+# Never stop/restart an active backup. Recover availability first if interrupted.
+WorkingDirectory=/srv/nexus/shared/tools/candidates/0000000000000000000000000000000000000000000000000000000000000000
+UMask=0077
+NoNewPrivileges=true
+Environment=PATH=/usr/bin:/bin
+ExecStartPre=/usr/bin/python3 -I -c "import os,socket; assert hasattr(os, 'O_NOFOLLOW') and hasattr(socket, 'AF_UNIX')"
+ExecStart=/usr/bin/node /srv/nexus/shared/tools/candidates/0000000000000000000000000000000000000000000000000000000000000000/scripts/production.mjs backup --project nexus_prod_example --config-file /srv/nexus/shared/production.env --backup-config /srv/nexus/shared/backup.json
+# No success push here: off-host publication is the success boundary.

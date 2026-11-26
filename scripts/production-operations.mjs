@@ -1,7 +1,8 @@
-import {mkdirSync,writeFileSync,rmSync,realpathSync,statSync,readFileSync} from 'node:fs';
+import {mkdirSync,realpathSync,lstatSync,statSync,readFileSync,rmdirSync} from 'node:fs';
+import {bindOperationCustody,acquireCustodyLock} from './production-lock-custody.mjs';
+import {acquireDirectoryLock} from './production-directory-lock.mjs';
 import {createHash} from 'node:crypto';
-import {hostname} from 'node:os';
-import {join,isAbsolute,relative,resolve,sep} from 'node:path';
+import {join,dirname,isAbsolute,relative,resolve,sep} from 'node:path';
 export function validateSecret(secret,root){
  if(!secret||!isAbsolute(secret))throw Error('Secret path must be absolute');
  const canonical=realpathSync(secret),base=realpathSync(root);
@@ -11,18 +12,18 @@ export function validateSecret(secret,root){
  }
  if(!statSync(canonical).isFile()||!readFileSync(canonical,'utf8').trim())throw Error('Secret file required');
 }
-export function acquireOperationLock(project,config,directory){
- mkdirSync(directory,{recursive:true});
+// Production always supplies a custody binding. The raw directory form remains
+// an explicit unit-test seam for the shared owner-token/retry primitive only.
+export function operationLockRoot(config,root,options){return bindOperationCustody(config,root,options);}
+export function acquireOperationLock(project,config,directory,options={}){
+ if(typeof directory==='object')return acquireCustodyLock(project,config,directory,options);
+ const {remove=rmdirSync}=options;
+ try{mkdirSync(directory,{mode:0o700});}catch(e){if(e.code!=='EEXIST')throw e;}
+ for(let part=resolve(directory);;part=dirname(part)){if(lstatSync(part).isSymbolicLink())throw Error('Unsafe operation lock root');if(dirname(part)===part)break;}
+ if(!lstatSync(directory).isDirectory())throw Error('Unsafe operation lock root');
  const key=createHash('sha256').update(project).digest('hex');
  const lock=join(directory,key+'.lock');
- // mkdir is exclusive on Windows and POSIX. Never infer death from elapsed time or PID reuse.
- try{mkdirSync(lock);}catch(error){
-  if(error.code==='EEXIST'){const locked=new Error('Operation lock is held');locked.code='NEXUS_OPERATION_LOCKED';throw locked;}
-  throw error;
- }
- try{writeFileSync(join(lock,'owner.json'),JSON.stringify({pid:process.pid,host:hostname(),config:realpathSync(config)}),{mode:0o600});}
- catch(e){rmSync(lock,{recursive:true,force:true});throw e;}
- return ()=>rmSync(lock,{recursive:true});
+ return acquireDirectoryLock(lock,{remove,cleanupCode:'NEXUS_OPERATION_LOCK_CLEANUP',lockedCode:'NEXUS_OPERATION_LOCKED',diagnostics:{config:realpathSync(config)}});
 }
 export function runMigration(run,start){
  try{
